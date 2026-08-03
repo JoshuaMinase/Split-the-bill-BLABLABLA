@@ -49,6 +49,31 @@ function Avatar({ name, size = 'sm', isMe = false }: { name: string; size?: 'sm'
 
 // ─── Item card ────────────────────────────────────────────────────────────────
 
+function FoodImage({ url, name }: { url?: string | null; name: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!url || failed) {
+    // Emoji fallback — deterministic from item name
+    const emojis = ['🍔','🍕','🥗','🍜','🍣','🥩','🍗','🥘','🍱','🌮','🥙','🍛','🫕','🥪'];
+    let hash = 0;
+    for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffffffff;
+    const emoji = emojis[Math.abs(hash) % emojis.length];
+    return (
+      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-100 to-purple-100 flex items-center justify-center text-2xl flex-shrink-0">
+        {emoji}
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt={name}
+      onError={() => setFailed(true)}
+      className="w-14 h-14 rounded-2xl object-cover flex-shrink-0 bg-gray-100"
+    />
+  );
+}
+
 function ItemCard({
   item,
   claimants,
@@ -70,7 +95,7 @@ function ItemCard({
       onClick={onToggle}
       disabled={isPending}
       aria-pressed={iClaimed}
-      className={`w-full text-left rounded-3xl border-2 p-4 transition-all duration-150 select-none
+      className={`w-full text-left rounded-3xl border-2 p-3 transition-all duration-150 select-none
         ${iClaimed
           ? 'border-brand-400 bg-gradient-to-br from-brand-50 to-purple-50 shadow-card'
           : 'border-gray-100 bg-white shadow-sm hover:border-brand-200 hover:shadow-card'
@@ -78,18 +103,9 @@ function ItemCard({
         ${isPending ? 'opacity-60 pointer-events-none' : 'active:scale-[0.97]'}
       `}
     >
-      <div className="flex items-start gap-3">
-        {/* Check ring */}
-        <div
-          className={`mt-0.5 w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all
-            ${iClaimed ? 'border-brand-500 bg-brand-500' : 'border-gray-300 bg-white'}
-          `}
-        >
-          {isPending
-            ? <Loader2 size={10} className="text-brand-500 animate-spin" />
-            : iClaimed && <span className="text-white text-xs font-black">✓</span>
-          }
-        </div>
+      <div className="flex items-center gap-3">
+        {/* Food image */}
+        <FoodImage url={item.image_url} name={item.name} />
 
         {/* Item info */}
         <div className="flex-1 min-w-0">
@@ -102,7 +118,7 @@ function ItemCard({
 
           {/* Claimants row */}
           {claimants.length > 0 && (
-            <div className="flex items-center gap-1.5 mt-1.5">
+            <div className="flex items-center gap-1.5 mt-1">
               <div className="flex -space-x-1.5">
                 {claimants.slice(0, 5).map((p) => (
                   <Avatar key={p.id} name={p.name} size="sm" isMe={p.id === myParticipantId} />
@@ -122,14 +138,26 @@ function ItemCard({
           )}
         </div>
 
-        {/* Price */}
-        <div className="text-right flex-shrink-0">
-          <p className={`font-bold text-sm ${iClaimed ? 'text-brand-700' : 'text-gray-700'}`}>
-            {fmt(item.price * item.quantity)}
-          </p>
-          {iClaimed && sharedCost !== null && claimants.length > 1 && (
-            <p className="text-[10px] text-brand-500 mt-0.5">my share</p>
-          )}
+        {/* Price + check */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="text-right">
+            <p className={`font-bold text-sm ${iClaimed ? 'text-brand-700' : 'text-gray-700'}`}>
+              {fmt(item.price * item.quantity)}
+            </p>
+            {iClaimed && sharedCost !== null && claimants.length > 1 && (
+              <p className="text-[10px] text-brand-500 mt-0.5">my share</p>
+            )}
+          </div>
+          <div
+            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all
+              ${iClaimed ? 'border-brand-500 bg-brand-500' : 'border-gray-300 bg-white'}
+            `}
+          >
+            {isPending
+              ? <Loader2 size={10} className="text-brand-500 animate-spin" />
+              : iClaimed && <span className="text-white text-xs font-black">✓</span>
+            }
+          </div>
         </div>
       </div>
     </button>

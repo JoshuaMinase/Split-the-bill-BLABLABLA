@@ -5,6 +5,7 @@ export interface ReceiptItem {
   name: string;
   price: number;
   quantity: number;
+  image_url?: string | null;
 }
 
 export interface Receipt {
@@ -56,7 +57,7 @@ export interface Session {
 // Draft returned by /api/receipts/parse — before the session is created
 export interface ReceiptDraft {
   merchant_name: string | null;
-  items: Array<{ name: string; price: number; quantity: number }>;
+  items: Array<{ name: string; price: number; quantity: number; image_url?: string | null }>;
   subtotal: number;
   tax: number;
   tip: number;

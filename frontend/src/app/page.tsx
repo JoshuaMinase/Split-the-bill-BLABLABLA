@@ -198,6 +198,33 @@ function UploadZone({
   );
 }
 
+// ─── Food image thumbnail ─────────────────────────────────────────────────────
+
+function FoodThumb({ url, name }: { url?: string | null; name: string }) {
+  const [failed, setFailed] = useState(false);
+  const emojis = ['🍔','🍕','🥗','🍜','🍣','🥩','🍗','🥘','🍱','🌮','🥙','🍛','🫕','🥪'];
+  let hash = 0;
+  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffffffff;
+  const emoji = emojis[Math.abs(hash) % emojis.length];
+
+  if (!url || failed) {
+    return (
+      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-100 to-purple-100 flex items-center justify-center text-lg flex-shrink-0">
+        {emoji}
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt={name}
+      onError={() => setFailed(true)}
+      className="w-10 h-10 rounded-xl object-cover flex-shrink-0 bg-gray-100"
+    />
+  );
+}
+
 // ─── Item row editor ──────────────────────────────────────────────────────────
 
 function ItemRow({
@@ -207,7 +234,7 @@ function ItemRow({
   onRemove,
   canRemove,
 }: {
-  item: { name: string; price: number; quantity: number };
+  item: { name: string; price: number; quantity: number; image_url?: string | null };
   index: number;
   onUpdate: (i: number, field: string, v: string | number) => void;
   onRemove: (i: number) => void;
@@ -215,6 +242,8 @@ function ItemRow({
 }) {
   return (
     <div className="flex gap-2 items-center animate-fade-in">
+      {/* Food thumbnail */}
+      <FoodThumb url={item.image_url} name={item.name} />
       {/* Name */}
       <input
         className="input-field flex-1 !py-2.5 !text-sm"

@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from calculations import calculate_splits
 from db import ensure_indexes, gen_id, new_session_doc, sessions_col
 from grok_service import parse_receipt_image
+from food_image_service import food_image_url
 from ws_manager import manager
 
 load_dotenv()
@@ -113,6 +114,18 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/api/food-image")
+async def get_food_image(q: str):
+    """
+    Return a food image URL for a given item name.
+    Uses Unsplash Source — free, no API key required.
+    The returned URL works directly as an <img src>.
+    """
+    if not q or not q.strip():
+        return {"url": None}
+    return {"url": food_image_url(q.strip())}
+
+
 @app.post("/api/receipts/parse")
 async def parse_receipt(file: UploadFile = File(...)):
     """
@@ -139,6 +152,10 @@ async def parse_receipt(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Couldn't read that receipt: {e}")
 
+    # Attach a food image URL to each item (Unsplash Source, no API key needed)
+    for item in parsed.get("items", []):
+        item["image_url"] = food_image_url(item.get("name", ""))
+
     return parsed
 
 
@@ -148,7 +165,12 @@ async def create_session(receipt: ReceiptIn):
     Step 1b: Uploader confirms/edits the draft and creates the group.
     Returns the session token used as the share link identifier.
     """
-    doc = new_session_doc(receipt.model_dump())
+    data = receipt.model_dump()
+    # Attach image URLs to each item if not already present
+    for item in data.get("items", []):
+        if not item.get("image_url"):
+            item["image_url"] = food_image_url(item.get("name", ""))
+    doc = new_session_doc(data)
     await sessions_col.insert_one(doc)
     return {"token": doc["token"], "session": public_view(doc)}
 

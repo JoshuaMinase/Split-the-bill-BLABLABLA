@@ -53,6 +53,7 @@ def new_session_doc(receipt: dict) -> dict:
             "name": item["name"],
             "price": float(item["price"]),
             "quantity": item.get("quantity", 1),
+            "image_url": item.get("image_url"),  # carry through from parse/create
         })
 
     return {
