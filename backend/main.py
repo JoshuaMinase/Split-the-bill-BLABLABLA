@@ -34,11 +34,16 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    try:
-        await ensure_indexes()
-    except Exception as e:
-        # Log error but don't fail startup - allow healthcheck to pass
-        print(f"Warning: Could not ensure MongoDB indexes: {e}")
+    # Run index creation in the background so startup never blocks on MongoDB.
+    # The /health endpoint returns immediately; indexes are ready within seconds.
+    async def _bg_indexes():
+        try:
+            await ensure_indexes()
+            print("MongoDB indexes ready.")
+        except Exception as e:
+            print(f"Warning: Could not ensure MongoDB indexes: {e}")
+
+    asyncio.create_task(_bg_indexes())
     yield
 
 app = FastAPI(title="SplitReceipt API", version="1.0.0", lifespan=lifespan)
@@ -116,6 +121,8 @@ async def broadcast_state(token: str):
 
 @app.get("/health")
 async def health():
+    # Intentionally simple — no DB call. Railway healthcheck hits this
+    # immediately after process start; we must respond before MongoDB connects.
     return {"status": "ok"}
 
 
