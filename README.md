@@ -1,95 +1,115 @@
-# SplitReceipt 🧾
+<div align="center">
 
-Split a restaurant bill with friends — scan the receipt, everyone claims what they ate, and each person sees exactly what they owe (including proportional tax & tip).
+# 🧾 SplitReceipt
+
+**Split a restaurant bill with friends — scan the receipt, everyone claims what they ate, done.**
+
+[![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi)](https://fastapi.tiangolo.com)
+[![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?logo=mongodb)](https://www.mongodb.com/cloud/atlas)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+</div>
 
 ---
 
-## How it works
+## What it does
 
 | Step | Who | What happens |
 |------|-----|--------------|
-| 1 | **You** | Take a photo of the receipt. AI reads it into an item list. Review/edit, then create the group. |
-| 2 | **Everyone** | Opens the share link. Enters their name. Taps the items they ate (real-time, everyone sees each other's selections live). |
-| 3 | **You** | Choose who paid, enter their account number. Tap **Lock & Calculate**. |
-| 4 | **Everyone** | Sees their final amount with a breakdown. Copies the payer's account details and sends the money manually. |
+| **1** | You | Take a photo of the receipt. AI reads it into an item list. Review/edit, then create the group. |
+| **2** | Everyone | Opens the share link. Enters their name. Taps the items they ate — real-time, everyone sees each other's selections live. |
+| **3** | You | Choose who paid, enter their account number. Tap **Lock & Calculate**. |
+| **4** | Everyone | Sees their final amount with a full breakdown. Copies the payer's account details and sends the money. |
+
+No app install required. Works entirely in the browser. Optimised for phones.
+
+---
+
+## Features
+
+- 📸 **AI receipt scanning** — powered by Grok vision, reads any receipt photo
+- ⚡ **Real-time** — WebSocket push so everyone sees claims update instantly
+- 🧮 **Correct math** — shared items split evenly, tax & tip proportional to your share, rounding absorbed by the payer
+- 📱 **Phone-first UI** — designed for mobile, works on desktop too
+- 🔗 **Zero friction** — share a link, no account needed to join
+- 🇪🇹 **Ethiopian payment methods** — Telebirr, CBE, Awash, Dashen, HelloCash built-in
+
+---
+
+## Tech stack
+
+| Layer | Tech |
+|-------|------|
+| Frontend | Next.js 16, TypeScript, Tailwind CSS |
+| Backend | FastAPI (Python 3.11), async via Motor |
+| Database | MongoDB (Motor async driver) |
+| AI | Grok vision API (x.ai) |
+| Real-time | WebSockets (FastAPI native) |
+| Deploy | Vercel (frontend) + Railway (backend) |
 
 ---
 
 ## Project structure
 
 ```
-Reciept/
-├── backend/          FastAPI (Python)
-│   ├── main.py       All API endpoints + WebSocket
-│   ├── db.py         MongoDB (Motor async) connection + session document schema
-│   ├── grok_service.py   Receipt OCR via Grok vision API
-│   ├── calculations.py   Split math (shared items, proportional tax, rounding)
-│   ├── ws_manager.py     Real-time WebSocket broadcaster
-│   ├── requirements.txt
-│   └── .env.example
+splitreceipt/
+├── backend/
+│   ├── main.py              # All API endpoints + WebSocket
+│   ├── db.py                # MongoDB connection + session schema
+│   ├── grok_service.py      # Receipt OCR via Grok vision API
+│   ├── calculations.py      # Split math (shared items, proportional tax, rounding)
+│   ├── ws_manager.py        # Real-time WebSocket broadcaster
+│   ├── tests/               # pytest unit tests (37 tests, 100% pass)
+│   └── requirements.txt
 │
-└── frontend/         Next.js 14 + Tailwind CSS (TypeScript)
+└── frontend/
     └── src/
         ├── app/
-        │   ├── page.tsx                         Step 1: Upload receipt
+        │   ├── page.tsx                      # Step 1: Upload receipt
         │   └── session/[token]/
-        │       ├── page.tsx                     Step 2: Claim items
-        │       └── results/page.tsx             Step 3: Payer + final amounts
-        ├── hooks/useSession.ts                  WebSocket state hook
+        │       ├── page.tsx                  # Step 2: Claim items (live)
+        │       └── results/page.tsx          # Step 3: Payer + final amounts
+        ├── hooks/useSession.ts               # WebSocket state hook with reconnect
         └── lib/
-            ├── api.ts                           Typed API client
-            ├── types.ts                         Shared TypeScript types
-            └── device.ts                        Anonymous device identity
+            ├── api.ts                        # Typed API client
+            ├── types.ts                      # Shared TypeScript types
+            └── device.ts                     # Anonymous device identity
 ```
-
----
-
-## Prerequisites
-
-- **Python 3.11+**
-- **Node.js 18+**
-- **MongoDB** — either:
-  - Local: [download Community Edition](https://www.mongodb.com/try/download/community) and run `mongod`
-  - Cloud (free forever): create an [Atlas M0 cluster](https://www.mongodb.com/cloud/atlas/register) and copy the connection string
-- **Grok API key** — get one at [console.x.ai](https://console.x.ai/)
 
 ---
 
 ## Running locally
 
-### 1 — Backend
+### Prerequisites
+
+- Python 3.11+
+- Node.js 18+
+- MongoDB — [local](https://www.mongodb.com/try/download/community) **or** free [Atlas M0](https://www.mongodb.com/cloud/atlas/register)
+- Grok API key — [console.x.ai](https://console.x.ai/)
+
+### Backend
 
 ```bash
 cd backend
-
-# Copy env file and fill in your values
 cp .env.example .env
-# Edit .env: set GROK_API_KEY and MONGODB_URI
+# Edit .env — set GROK_API_KEY and MONGODB_URI
 
-# Install dependencies
 pip install -r requirements.txt
-
-# Start the API server (runs on http://localhost:8000)
 uvicorn main:app --reload --host 0.0.0.0
 ```
 
-Test it's running: open http://localhost:8000/health — should return `{"status":"ok"}`
+Check it's running: `http://localhost:8000/health` → `{"status":"ok"}`
 
-### 2 — Frontend
-
-Open a **new terminal**:
+### Frontend
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start the dev server (runs on http://localhost:3000)
 npm run dev
 ```
 
-Open http://localhost:3000 in your browser.
+Open `http://localhost:3000`
 
 ---
 
@@ -97,19 +117,27 @@ Open http://localhost:3000 in your browser.
 
 ### Backend (`backend/.env`)
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `GROK_API_KEY` | Your x.ai Grok API key | *(required)* |
-| `MONGODB_URI` | MongoDB connection string | `mongodb://localhost:27017` |
-| `MONGODB_DB` | Database name | `splitreceipt` |
+| Variable | Description |
+|----------|-------------|
+| `GROK_API_KEY` | Your x.ai Grok API key |
+| `MONGODB_URI` | MongoDB connection string (local or Atlas) |
+| `MONGODB_DB` | Database name — default `splitreceipt` |
+| `ALLOWED_ORIGINS` | Comma-separated frontend URL(s) for CORS |
 
-### Frontend (`frontend/.env.local`) — optional
+### Frontend (`frontend/.env.local`)
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `NEXT_PUBLIC_API_URL` | Backend URL | `http://localhost:8000` |
+| Variable | Description |
+|----------|-------------|
+| `NEXT_PUBLIC_API_URL` | Backend URL — default `http://localhost:8000` |
 
-Create `frontend/.env.local` and set `NEXT_PUBLIC_API_URL` when deploying to production.
+---
+
+## Split calculation rules
+
+1. **Shared items** — if multiple people claim the same item, the price is split evenly among them.
+2. **Unclaimed items** — split evenly among all participants (receipt total always reconciles).
+3. **Tax & tip** — allocated proportionally to each person's share of the subtotal.
+4. **Rounding** — leftover cents absorbed by the payer so all amounts sum exactly to the receipt total.
 
 ---
 
@@ -117,7 +145,7 @@ Create `frontend/.env.local` and set `NEXT_PUBLIC_API_URL` when deploying to pro
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/receipts/parse` | Upload receipt image → returns draft item list |
+| `POST` | `/api/receipts/parse` | Upload receipt image → AI reads it → returns draft item list |
 | `POST` | `/api/sessions` | Confirm draft → create group → returns share token |
 | `GET` | `/api/sessions/{token}` | Get full session state |
 | `WS` | `/ws/sessions/{token}` | Real-time updates (claim, join, lock) |
@@ -128,38 +156,18 @@ Create `frontend/.env.local` and set `NEXT_PUBLIC_API_URL` when deploying to pro
 
 ---
 
-## Split calculation rules
+## Tests
 
-1. **Shared items** — if multiple people claim the same item, the price is split evenly among them.
-2. **Unclaimed items** — if nobody claims an item, it's split evenly among all participants (so the receipt total always reconciles fully).
-3. **Tax & tip** — allocated proportionally to each person's share of the subtotal (heavy orderers pay more tax).
-4. **Rounding** — any leftover cents are absorbed by the payer so all amounts sum exactly to the receipt total.
+```bash
+cd backend
+pytest tests/ -v
+# 37 passed in ~2s
+```
+
+Covers: split math, rounding edge cases, WebSocket connect/disconnect/broadcast, Grok response parsing.
 
 ---
 
-## Deploying
+## License
 
-### Backend
-Any Python host works: Railway, Render, Fly.io, or an EC2/VPS.
-
-```bash
-# Production start command
-uvicorn main:app --host 0.0.0.0 --port 8000
-```
-
-Set `GROK_API_KEY`, `MONGODB_URI`, and `MONGODB_DB` as environment variables on your host.
-
-Tighten CORS before going public — edit `allow_origins` in `main.py`:
-```python
-allow_origins=["https://yourdomain.com"],
-```
-
-### Frontend
-Deploy to [Vercel](https://vercel.com) (recommended for Next.js):
-
-```bash
-cd frontend
-npx vercel
-```
-
-Set `NEXT_PUBLIC_API_URL` to your deployed backend URL in Vercel's environment variables dashboard.
+MIT

@@ -1,3 +1,8 @@
+# ── Internal dev tooling — not part of the app ───────────────
+.ai/
+DEPLOY.md
+run_orchestrator.bat
+
 # ── Secrets — NEVER commit these ─────────────────────────────
 backend/.env
 .ai/.env
