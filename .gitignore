@@ -1,0 +1,72 @@
+# ── Secrets — NEVER commit these ─────────────────────────────
+backend/.env
+.ai/.env
+frontend/.env.local
+frontend/.env*.local
+
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+*.egg
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# ── Node / Next.js ────────────────────────────────────────────
+node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.turbo/
+.npm
+*.tsbuildinfo
+next-env.d.ts
+
+# ── OS junk ───────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ── Editor / IDE ──────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+
+# ── Logs ─────────────────────────────────────────────────────
+*.log
+logs/
+.ai/logs/
+
+# ── Orchestrator runtime outputs (keep structure, not outputs) ─
+.ai/outputs/
+.ai/memory/new_task.md
+
+# ── MongoDB local data ────────────────────────────────────────
+data/db/
+mongod.lock
