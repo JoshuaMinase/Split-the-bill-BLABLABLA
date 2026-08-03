@@ -1,12 +1,8 @@
-# Railway configuration for the backend service
-# Place this file inside the backend/ directory when deploying via Railway dashboard
-# (Railway will read it automatically if root directory is set to backend/)
-
 [build]
 builder = "nixpacks"
 
 [deploy]
-startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+startCommand = "/app/.venv/bin/uvicorn main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
