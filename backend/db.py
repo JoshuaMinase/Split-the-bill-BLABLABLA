@@ -15,16 +15,34 @@ import os
 import time
 import uuid
 from dotenv import load_dotenv
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 
 load_dotenv()
 
 MONGODB_URI = os.environ.get("MONGODB_URI", "mongodb://localhost:27017")
 DB_NAME = os.environ.get("MONGODB_DB", "splitreceipt")
 
-client = AsyncIOMotorClient(MONGODB_URI)
-db = client[DB_NAME]
-sessions_col = db["sessions"]  # the only collection we need
+# Lazy initialization — client is NOT created at import time so that
+# missing env vars don't crash the process before Railway can reach /health.
+_client: AsyncIOMotorClient | None = None
+
+
+def get_client() -> AsyncIOMotorClient:
+    """Return (creating if needed) the shared Motor client."""
+    global _client
+    if _client is None:
+        _client = AsyncIOMotorClient(MONGODB_URI)
+    return _client
+
+
+def get_db():
+    """Return the Motor database handle."""
+    return get_client()[DB_NAME]
+
+
+def get_sessions_col() -> AsyncIOMotorCollection:
+    """Return the 'sessions' collection handle."""
+    return get_db()["sessions"]
 
 
 def gen_id() -> str:
@@ -37,7 +55,8 @@ def gen_token() -> str:
 
 
 async def ensure_indexes():
-    await sessions_col.create_index("token", unique=True)
+    """Create required indexes. Called from lifespan; failure is non-fatal."""
+    await get_sessions_col().create_index("token", unique=True)
 
 
 def new_session_doc(receipt: dict) -> dict:

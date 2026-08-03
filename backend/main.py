@@ -23,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from calculations import calculate_splits
-from db import ensure_indexes, gen_id, new_session_doc, sessions_col
+from db import ensure_indexes, gen_id, get_sessions_col, new_session_doc
 from grok_service import parse_receipt_image
 from food_image_service import food_image_url, food_image_url_async
 from ws_manager import manager
@@ -34,7 +34,11 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await ensure_indexes()
+    try:
+        await ensure_indexes()
+    except Exception as e:
+        # Log error but don't fail startup - allow healthcheck to pass
+        print(f"Warning: Could not ensure MongoDB indexes: {e}")
     yield
 
 app = FastAPI(title="SplitReceipt API", version="1.0.0", lifespan=lifespan)
@@ -89,7 +93,7 @@ class PayerIn(BaseModel):
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async def get_session_or_404(token: str) -> dict:
-    session = await sessions_col.find_one({"token": token})
+    session = await get_sessions_col().find_one({"token": token})
     if not session:
         raise HTTPException(status_code=404, detail="Session not found. The link may have expired.")
     return session
@@ -180,7 +184,7 @@ async def create_session(receipt: ReceiptIn):
         for item, url in zip(items_needing_images, image_urls):
             item["image_url"] = url
     doc = new_session_doc(data)
-    await sessions_col.insert_one(doc)
+    await get_sessions_col().insert_one(doc)
     return {"token": doc["token"], "session": public_view(doc)}
 
 
@@ -216,7 +220,7 @@ async def join_session(token: str, body: JoinIn):
         "device_token": body.device_token,
         "joined_at": time.time(),
     }
-    await sessions_col.update_one({"token": token}, {"$push": {"participants": participant}})
+    await get_sessions_col().update_one({"token": token}, {"$push": {"participants": participant}})
     await broadcast_state(token)
     return {"participant_id": participant["id"], "already_joined": False}
 
@@ -246,12 +250,12 @@ async def claim_item(token: str, body: ClaimIn):
             for c in session["claims"]
         )
         if not already:
-            await sessions_col.update_one(
+            await get_sessions_col().update_one(
                 {"token": token},
                 {"$push": {"claims": {"item_id": body.item_id, "participant_id": body.participant_id}}},
             )
     else:
-        await sessions_col.update_one(
+        await get_sessions_col().update_one(
             {"token": token},
             {"$pull": {"claims": {"item_id": body.item_id, "participant_id": body.participant_id}}},
         )
@@ -276,7 +280,7 @@ async def set_payer(token: str, body: PayerIn):
         "account_type": body.account_type,
         "account_details": body.account_details,
     }
-    await sessions_col.update_one({"token": token}, {"$set": {"payer": payer}})
+    await get_sessions_col().update_one({"token": token}, {"$set": {"payer": payer}})
     await broadcast_state(token)
     return {"ok": True}
 
@@ -308,7 +312,7 @@ async def lock_session(token: str):
         payer_participant_id=session["payer"]["participant_id"],
     )
 
-    await sessions_col.update_one(
+    await get_sessions_col().update_one(
         {"token": token},
         {"$set": {"status": "locked", "results": results}},
     )
@@ -325,7 +329,7 @@ async def session_socket(websocket: WebSocket, token: str):
     After that, state is pushed whenever anything changes (claim, join, lock).
     Client pings (any text frame) are ignored — this is server-push only.
     """
-    session = await sessions_col.find_one({"token": token})
+    session = await get_sessions_col().find_one({"token": token})
     if not session:
         await websocket.close(code=4004)
         return
