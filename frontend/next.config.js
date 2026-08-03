@@ -3,14 +3,24 @@ const nextConfig = {
   images: {
     remotePatterns: [
       {
-        // Unsplash Source — used for food item photos
+        // TheMealDB food photos
         protocol: 'https',
-        hostname: 'source.unsplash.com',
+        hostname: 'www.themealdb.com',
       },
       {
-        // Unsplash CDN — Unsplash Source redirects here
+        // Foodish API food photos
         protocol: 'https',
-        hostname: 'images.unsplash.com',
+        hostname: 'foodish-api.com',
+      },
+      {
+        // Wikimedia Commons — Ethiopian dish photos
+        protocol: 'https',
+        hostname: 'upload.wikimedia.org',
+      },
+      {
+        // UI Avatars — coloured letter fallback
+        protocol: 'https',
+        hostname: 'ui-avatars.com',
       },
     ],
   },

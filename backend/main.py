@@ -11,6 +11,7 @@ Endpoints:
   POST   /api/sessions/{token}/payer  Set who paid + their payment account info
   POST   /api/sessions/{token}/lock   Freeze claims, compute final amounts per person
 """
+import asyncio
 import os
 import time
 from contextlib import asynccontextmanager
@@ -24,7 +25,7 @@ from pydantic import BaseModel
 from calculations import calculate_splits
 from db import ensure_indexes, gen_id, new_session_doc, sessions_col
 from grok_service import parse_receipt_image
-from food_image_service import food_image_url
+from food_image_service import food_image_url, food_image_url_async
 from ws_manager import manager
 
 load_dotenv()
@@ -118,12 +119,13 @@ async def health():
 async def get_food_image(q: str):
     """
     Return a food image URL for a given item name.
-    Uses Unsplash Source — free, no API key required.
-    The returned URL works directly as an <img src>.
+    Tries TheMealDB first, then Foodish, then an avatar fallback.
+    All free, no API key required.
     """
     if not q or not q.strip():
         return {"url": None}
-    return {"url": food_image_url(q.strip())}
+    url = await food_image_url_async(q.strip())
+    return {"url": url}
 
 
 @app.post("/api/receipts/parse")
@@ -138,12 +140,10 @@ async def parse_receipt(file: UploadFile = File(...)):
     if ct not in allowed:
         raise HTTPException(status_code=415, detail=f"Unsupported image type: {ct}")
 
-    # Check declared size BEFORE reading to avoid loading huge files into memory
     if file.size and file.size > 10 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Image too large. Please use a photo under 10 MB.")
 
     image_bytes = await file.read()
-    # Double-check actual size after read (size header may be absent/spoofed)
     if len(image_bytes) > 10 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Image too large. Please use a photo under 10 MB.")
 
@@ -152,9 +152,14 @@ async def parse_receipt(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Couldn't read that receipt: {e}")
 
-    # Attach a food image URL to each item (Unsplash Source, no API key needed)
-    for item in parsed.get("items", []):
-        item["image_url"] = food_image_url(item.get("name", ""))
+    # Fetch food images for all items concurrently
+    items = parsed.get("items", [])
+    if items:
+        image_urls = await asyncio.gather(
+            *[food_image_url_async(item.get("name", "")) for item in items]
+        )
+        for item, url in zip(items, image_urls):
+            item["image_url"] = url
 
     return parsed
 
@@ -166,10 +171,14 @@ async def create_session(receipt: ReceiptIn):
     Returns the session token used as the share link identifier.
     """
     data = receipt.model_dump()
-    # Attach image URLs to each item if not already present
-    for item in data.get("items", []):
-        if not item.get("image_url"):
-            item["image_url"] = food_image_url(item.get("name", ""))
+    # Fetch images for items that don't already have one (concurrently)
+    items_needing_images = [i for i in data.get("items", []) if not i.get("image_url")]
+    if items_needing_images:
+        image_urls = await asyncio.gather(
+            *[food_image_url_async(item.get("name", "")) for item in items_needing_images]
+        )
+        for item, url in zip(items_needing_images, image_urls):
+            item["image_url"] = url
     doc = new_session_doc(data)
     await sessions_col.insert_one(doc)
     return {"token": doc["token"], "session": public_view(doc)}
