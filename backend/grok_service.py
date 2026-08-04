@@ -15,7 +15,7 @@ load_dotenv()
 
 GROK_API_KEY = os.environ.get("GROK_API_KEY", "")
 GROK_API_URL = "https://api.x.ai/v1/chat/completions"
-GROK_MODEL = "grok-2-vision-1212"  # vision-capable model; swap to grok-4 if available on your tier
+GROK_MODEL = "grok-4.5"  # current flagship model with vision support (grok-2-vision-1212 retired)
 
 SYSTEM_PROMPT = """You are a receipt-parsing engine. You will be shown a photo of a restaurant \
 receipt. Extract the data and return ONLY valid JSON, no markdown fences, no commentary, \
