@@ -43,10 +43,13 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 export async function parseReceipt(file: File): Promise<ReceiptDraft> {
   const form = new FormData();
   form.append('file', file);
-  const res = await fetch(`${BASE_URL}/api/receipts/parse`, {
+  // Prefer pages/api upload (Node runtime) which runs the AI parsing chain.
+  const endpoint = `${BASE_URL}/api/receipts/upload`;
+  const res = await fetch(endpoint, {
     method: 'POST',
     body: form,
-    signal: AbortSignal.timeout(90_000), // 90s — Gemini vision can be slow
+    // Don't set Content-Type; browser sets multipart boundary.
+    signal: AbortSignal.timeout(90_000), // 90s — AI vision can be slow
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
