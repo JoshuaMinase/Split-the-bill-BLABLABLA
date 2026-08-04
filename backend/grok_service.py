@@ -76,6 +76,15 @@ async def parse_receipt_image(image_bytes: bytes, content_type: str = "image/jpe
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(GROK_API_URL, json=payload, headers=headers)
+        if resp.status_code == 401:
+            raise RuntimeError("Invalid Grok API key. Please check your GROK_API_KEY.")
+        if resp.status_code == 403:
+            raise RuntimeError(
+                "Grok API access denied (403). Your API key may have run out of credits "
+                "or lacks permission for this model. Visit console.x.ai to check your balance."
+            )
+        if resp.status_code == 429:
+            raise RuntimeError("Grok API rate limit reached. Please wait a moment and try again.")
         resp.raise_for_status()
         data = resp.json()
 

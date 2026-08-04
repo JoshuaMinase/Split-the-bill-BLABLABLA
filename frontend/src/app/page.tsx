@@ -230,7 +230,10 @@ export default function UploadPage() {
       const result = await parseReceipt(file);
       setDraft({ ...result, merchant_name: result.merchant_name ?? '' });
     } catch (err) {
-      setParseError(err instanceof Error ? err.message : 'Could not read receipt');
+      const msg = err instanceof Error ? err.message : 'Could not read receipt';
+      setParseError(msg);
+      // Auto-open manual entry so the user isn't stuck
+      setDraft(emptyDraft());
     } finally {
       setParsing(false);
     }
@@ -328,9 +331,12 @@ export default function UploadPage() {
       )}
 
       {parseError && (
-        <div className="card !bg-red-50 !border-red-200 p-4 flex items-start gap-2">
-          <span className="text-red-400 text-lg">⚠️</span>
-          <p className="text-sm text-red-700 flex-1">{parseError}</p>
+        <div className="card !bg-amber-50 !border-amber-200 p-4 flex items-start gap-2">
+          <span className="text-amber-500 text-lg flex-shrink-0">⚠️</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-amber-800">Couldn't read the receipt automatically</p>
+            <p className="text-xs text-amber-700 mt-0.5">Enter the items manually below — it only takes a minute.</p>
+          </div>
         </div>
       )}
 
