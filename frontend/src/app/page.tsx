@@ -514,7 +514,7 @@ export default function UploadPage() {
             </div>
 
             {/* Native share (shows on mobile) */}
-            {typeof navigator !== 'undefined' && navigator.share && (
+            {typeof navigator !== 'undefined' && 'share' in navigator && (
               <button
                 onClick={nativeShare}
                 className="w-full btn-primary !bg-green-500 hover:!bg-green-600"
