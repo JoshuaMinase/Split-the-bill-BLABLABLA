@@ -1,10 +1,12 @@
 """
-Receipt parsing with automatic fallback:
-  1. Google Gemini 2.0 Flash  (primary — free, 1,500 req/day)
-  2. OpenRouter free router   (fallback — activates on Gemini 429 rate limit)
+Receipt parsing with 3-tier automatic fallback:
 
-OpenRouter uses the OpenAI-compatible chat completions API and auto-selects
-a free vision-capable model via "openrouter/free".
+  1. Google Gemini 2.0 Flash       (primary  — free, 1,500 req/day)
+  2. OpenRouter free vision router  (fallback — activates on Gemini 429)
+  3. Groq vision  ×3 keys           (last resort — rotates through 3 keys on 429)
+
+Each tier is tried in order. A 429 rate-limit moves to the next tier.
+Any other error (bad key, bad image, bad JSON) is raised immediately.
 """
 import base64
 import json
@@ -30,7 +32,15 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODEL   = "openrouter/free"   # auto-picks a free vision model
 
-# ─── Shared prompt ────────────────────────────────────────────────────────────
+# ─── Groq (3 keys, rotated on 429) ────────────────────────────────────────────
+
+_raw_groq = os.environ.get("GROQ_API_KEY", "")
+# Support comma-separated list of keys OR a single key
+GROQ_API_KEYS: list[str] = [k.strip() for k in _raw_groq.split(",") if k.strip()]
+GROQ_API_URL  = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL    = "meta-llama/llama-4-scout-17b-16e-instruct"  # Groq's free vision model
+
+# ─── Shared prompt ─────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """You are a receipt-parsing engine. You will be shown a photo of a restaurant \
 receipt. Extract the data and return ONLY valid JSON, no markdown fences, no commentary, \
@@ -57,8 +67,11 @@ Rules:
 
 USER_TEXT = "Parse this receipt into the JSON shape described."
 
+# sentinel raised internally to signal 429 to the caller
+_RATE_LIMITED = "RATE_LIMITED"
 
-# ─── JSON extraction helpers ──────────────────────────────────────────────────
+
+# ─── JSON helpers ──────────────────────────────────────────────────────────────
 
 def _strip_fences(text: str) -> str:
     text = re.sub(r"^```(?:json)?\s*\n?", "", text, flags=re.IGNORECASE)
@@ -77,10 +90,9 @@ def _parse_json(raw: str) -> dict:
     return parsed
 
 
-# ─── Gemini provider ──────────────────────────────────────────────────────────
+# ─── Tier 1: Gemini ────────────────────────────────────────────────────────────
 
 async def _call_gemini(image_bytes: bytes, content_type: str) -> dict:
-    """Call Gemini 2.0 Flash. Raises RuntimeError on 429, ValueError on bad response."""
     b64 = base64.b64encode(image_bytes).decode()
     payload = {
         "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
@@ -98,11 +110,10 @@ async def _call_gemini(image_bytes: bytes, content_type: str) -> dict:
         resp = await client.post(url, json=payload)
 
     if resp.status_code == 429:
-        raise RuntimeError("RATE_LIMITED")           # sentinel for caller
+        raise RuntimeError(_RATE_LIMITED)
     if resp.status_code in (401, 403):
         raise RuntimeError(
-            "Gemini API key is invalid or unauthorized. "
-            "Check your GEMINI_API_KEY at https://aistudio.google.com/app/apikey"
+            "Gemini API key is invalid. Check GEMINI_API_KEY at https://aistudio.google.com/app/apikey"
         )
     if resp.status_code == 400:
         raise RuntimeError("Gemini rejected the image (400). Try a clearer photo.")
@@ -112,95 +123,156 @@ async def _call_gemini(image_bytes: bytes, content_type: str) -> dict:
     candidates = data.get("candidates", [])
     if not candidates:
         block = data.get("promptFeedback", {}).get("blockReason", "")
-        raise ValueError(f"Gemini returned no candidates. {('Blocked: ' + block) if block else str(data)[:200]}")
-
+        raise ValueError(
+            f"Gemini returned no candidates. {('Blocked: ' + block) if block else str(data)[:200]}"
+        )
     raw = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
     if not raw:
         raise ValueError("Gemini returned an empty response.")
     return _parse_json(raw)
 
 
-# ─── OpenRouter fallback ──────────────────────────────────────────────────────
+# ─── Tier 2: OpenRouter ────────────────────────────────────────────────────────
 
 async def _call_openrouter(image_bytes: bytes, content_type: str) -> dict:
-    """Call OpenRouter free vision router. Used when Gemini is rate-limited."""
     if not OPENROUTER_API_KEY:
-        raise RuntimeError(
-            "OPENROUTER_API_KEY is not set. Add it to backend/.env as a fallback for "
-            "when Gemini hits its rate limit. Get a free key at https://openrouter.ai"
-        )
+        raise RuntimeError(_RATE_LIMITED)   # skip to next tier if not configured
 
-    b64 = base64.b64encode(image_bytes).decode()
+    b64      = base64.b64encode(image_bytes).decode()
     data_url = f"data:{content_type};base64,{b64}"
-
-    payload = {
+    payload  = {
         "model": OPENROUTER_MODEL,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image_url", "image_url": {"url": data_url}},
-                    {"type": "text", "text": USER_TEXT},
-                ],
-            },
+            {"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": data_url}},
+                {"type": "text",      "text": USER_TEXT},
+            ]},
         ],
         "temperature": 0,
     }
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://splitreceipt.app",
-        "X-Title": "SplitReceipt",
+        "Content-Type":  "application/json",
+        "HTTP-Referer":  "https://splitreceipt.app",
+        "X-Title":       "SplitReceipt",
     }
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(OPENROUTER_API_URL, json=payload, headers=headers)
 
     if resp.status_code == 429:
-        raise RuntimeError(
-            "Both Gemini and OpenRouter are rate-limited right now. "
-            "Please wait a minute and try again."
-        )
+        raise RuntimeError(_RATE_LIMITED)
     if resp.status_code in (401, 403):
         raise RuntimeError(
-            "OpenRouter API key is invalid. "
-            "Check your OPENROUTER_API_KEY at https://openrouter.ai/settings/keys"
+            "OpenRouter API key is invalid. Check OPENROUTER_API_KEY at https://openrouter.ai/settings/keys"
         )
     resp.raise_for_status()
 
-    data = resp.json()
+    data    = resp.json()
     choices = data.get("choices", [])
     if not choices:
         raise ValueError(f"OpenRouter returned no choices. Response: {str(data)[:200]}")
-
     raw = choices[0].get("message", {}).get("content", "").strip()
     if not raw:
         raise ValueError("OpenRouter returned an empty response.")
     return _parse_json(raw)
 
 
-# ─── Public entry point ───────────────────────────────────────────────────────
+# ─── Tier 3: Groq (rotates through multiple keys) ─────────────────────────────
+
+async def _call_groq_with_key(api_key: str, image_bytes: bytes, content_type: str) -> dict:
+    """Try one Groq key. Raises RuntimeError(_RATE_LIMITED) on 429."""
+    b64      = base64.b64encode(image_bytes).decode()
+    data_url = f"data:{content_type};base64,{b64}"
+    payload  = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": data_url}},
+                {"type": "text",      "text": USER_TEXT},
+            ]},
+        ],
+        "temperature": 0,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type":  "application/json",
+    }
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(GROQ_API_URL, json=payload, headers=headers)
+
+    if resp.status_code == 429:
+        raise RuntimeError(_RATE_LIMITED)
+    if resp.status_code in (401, 403):
+        # Bad key — skip to next key rather than crashing
+        raise RuntimeError(_RATE_LIMITED)
+    resp.raise_for_status()
+
+    data    = resp.json()
+    choices = data.get("choices", [])
+    if not choices:
+        raise ValueError(f"Groq returned no choices. Response: {str(data)[:200]}")
+    raw = choices[0].get("message", {}).get("content", "").strip()
+    if not raw:
+        raise ValueError("Groq returned an empty response.")
+    return _parse_json(raw)
+
+
+async def _call_groq(image_bytes: bytes, content_type: str) -> dict:
+    """Try each Groq key in order, moving on after each 429."""
+    if not GROQ_API_KEYS:
+        raise RuntimeError(_RATE_LIMITED)   # not configured — skip tier
+
+    for key in GROQ_API_KEYS:
+        try:
+            return await _call_groq_with_key(key, image_bytes, content_type)
+        except RuntimeError as e:
+            if _RATE_LIMITED in str(e):
+                print(f"Groq key ...{key[-6:]} rate-limited or invalid, trying next.")
+                continue
+            raise
+
+    # All keys exhausted
+    raise RuntimeError(_RATE_LIMITED)
+
+
+# ─── Public entry point ────────────────────────────────────────────────────────
 
 async def parse_receipt_image(image_bytes: bytes, content_type: str = "image/jpeg") -> dict:
     """
-    Parse a receipt image. Tries Gemini first; falls back to OpenRouter on 429.
+    Parse a receipt image using a 3-tier fallback chain:
+      Gemini → OpenRouter → Groq (×3 keys)
+    Each tier is attempted only if the previous one is rate-limited.
     """
-    if not GEMINI_API_KEY and not OPENROUTER_API_KEY:
+    if not GEMINI_API_KEY and not OPENROUTER_API_KEY and not GROQ_API_KEYS:
         raise RuntimeError(
-            "No AI API keys configured. Set GEMINI_API_KEY and/or OPENROUTER_API_KEY in backend/.env"
+            "No AI API keys configured. Set GEMINI_API_KEY, OPENROUTER_API_KEY, "
+            "and/or GROQ_API_KEY in backend/.env"
         )
 
-    # ── Primary: Gemini ────────────────────────────────────────────────────────
-    if GEMINI_API_KEY:
-        try:
-            return await _call_gemini(image_bytes, content_type)
-        except RuntimeError as e:
-            if "RATE_LIMITED" in str(e):
-                print("Gemini rate-limited — falling back to OpenRouter.")
-                # fall through to OpenRouter below
-            else:
-                raise   # real error (bad key, bad image) — don't swallow
+    tiers = [
+        ("Gemini",      _call_gemini      if GEMINI_API_KEY      else None),
+        ("OpenRouter",  _call_openrouter  if OPENROUTER_API_KEY  else None),
+        ("Groq",        _call_groq        if GROQ_API_KEYS       else None),
+    ]
 
-    # ── Fallback: OpenRouter ───────────────────────────────────────────────────
-    return await _call_openrouter(image_bytes, content_type)
+    for name, fn in tiers:
+        if fn is None:
+            continue
+        try:
+            result = await fn(image_bytes, content_type)
+            if name != "Gemini":
+                print(f"Receipt parsed via {name} (fallback).")
+            return result
+        except RuntimeError as e:
+            if _RATE_LIMITED in str(e):
+                print(f"{name} rate-limited — trying next tier.")
+                continue
+            raise   # real error (bad key, bad image) — surface it
+
+    raise RuntimeError(
+        "All AI providers are currently rate-limited. Please wait a minute and try again."
+    )

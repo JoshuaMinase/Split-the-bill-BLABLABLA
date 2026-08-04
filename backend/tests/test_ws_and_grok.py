@@ -212,34 +212,78 @@ class TestMarkdownStripping:
 
     def test_no_api_key_raises_runtime_error(self):
         with patch("grok_service.GEMINI_API_KEY", ""), \
-             patch("grok_service.OPENROUTER_API_KEY", ""):
+             patch("grok_service.OPENROUTER_API_KEY", ""), \
+             patch("grok_service.GROQ_API_KEYS", []):
             with pytest.raises(RuntimeError, match="No AI API keys"):
                 run(grok_service.parse_receipt_image(b"fake", "image/jpeg"))
 
     def test_gemini_rate_limit_falls_back_to_openrouter(self):
         """When Gemini returns 429, should automatically call OpenRouter."""
-        # Gemini response: 429
         gemini_resp = MagicMock()
         gemini_resp.status_code = 429
         gemini_resp.raise_for_status = MagicMock()
 
-        # OpenRouter response: valid receipt JSON
         payload = '{"merchant_name": "Fallback", "items": [], "subtotal": 5, "tax": 0, "tip": 0, "total": 5}'
-        openrouter_resp = MagicMock()
-        openrouter_resp.status_code = 200
-        openrouter_resp.json.return_value = self._mock_openrouter_response(payload)
-        openrouter_resp.raise_for_status = MagicMock()
+        or_resp = MagicMock()
+        or_resp.status_code = 200
+        or_resp.json.return_value = self._mock_openrouter_response(payload)
+        or_resp.raise_for_status = MagicMock()
 
-        # First call returns 429 (Gemini), second call returns 200 (OpenRouter)
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(side_effect=[gemini_resp, openrouter_resp])
+        mock_client.post = AsyncMock(side_effect=[gemini_resp, or_resp])
 
-        with patch("grok_service.GEMINI_API_KEY", "fake-gemini-key"), \
-             patch("grok_service.OPENROUTER_API_KEY", "fake-or-key"), \
+        with patch("grok_service.GEMINI_API_KEY", "fake-gemini"), \
+             patch("grok_service.OPENROUTER_API_KEY", "fake-or"), \
+             patch("grok_service.GROQ_API_KEYS", []), \
              patch("httpx.AsyncClient", return_value=mock_client):
             result = run(grok_service.parse_receipt_image(b"fake", "image/jpeg"))
 
         assert result["merchant_name"] == "Fallback"
-        assert mock_client.post.call_count == 2  # Gemini tried, then OpenRouter
+        assert mock_client.post.call_count == 2
+
+    def test_gemini_and_openrouter_rate_limited_falls_back_to_groq(self):
+        """When Gemini + OpenRouter both 429, should fall back to Groq."""
+        rate_limited = MagicMock()
+        rate_limited.status_code = 429
+        rate_limited.raise_for_status = MagicMock()
+
+        payload = '{"merchant_name": "Groq", "items": [], "subtotal": 10, "tax": 0, "tip": 0, "total": 10}'
+        groq_resp = MagicMock()
+        groq_resp.status_code = 200
+        groq_resp.json.return_value = self._mock_openrouter_response(payload)
+        groq_resp.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        # Gemini → 429, OpenRouter → 429, Groq key 1 → 200
+        mock_client.post = AsyncMock(side_effect=[rate_limited, rate_limited, groq_resp])
+
+        with patch("grok_service.GEMINI_API_KEY", "fake-gemini"), \
+             patch("grok_service.OPENROUTER_API_KEY", "fake-or"), \
+             patch("grok_service.GROQ_API_KEYS", ["fake-groq-1"]), \
+             patch("httpx.AsyncClient", return_value=mock_client):
+            result = run(grok_service.parse_receipt_image(b"fake", "image/jpeg"))
+
+        assert result["merchant_name"] == "Groq"
+        assert mock_client.post.call_count == 3
+
+    def test_all_providers_rate_limited_raises(self):
+        """When all providers are rate-limited, raise a clear error."""
+        rate_limited = MagicMock()
+        rate_limited.status_code = 429
+        rate_limited.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=rate_limited)
+
+        with patch("grok_service.GEMINI_API_KEY", "fake-gemini"), \
+             patch("grok_service.OPENROUTER_API_KEY", "fake-or"), \
+             patch("grok_service.GROQ_API_KEYS", ["fake-groq-1"]), \
+             patch("httpx.AsyncClient", return_value=mock_client):
+            with pytest.raises(RuntimeError, match="rate-limited"):
+                run(grok_service.parse_receipt_image(b"fake", "image/jpeg"))
