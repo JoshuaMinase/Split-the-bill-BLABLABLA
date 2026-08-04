@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import formidable from 'formidable';
 import fs from 'fs';
-import { parseReceiptImage } from '@/lib/ai_parse';
+import { parseReceiptImage } from '../../../lib/ai_parse';
 
 export const config = {
   api: {

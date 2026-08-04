@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { calculateSplits } from '@/src/lib/calculations';
+import { prisma } from '../../../../lib/prisma';
+import { calculateSplits } from '../../../../src/lib/calculations';
 
 export async function POST(_request: Request, { params }: { params: { token: string } }) {
   const token = params.token;

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { foodImageUrlAsync } from '@/src/lib/foodImage';
+import { foodImageUrlAsync } from '../../../src/lib/foodImage';
 
 export async function GET(req: Request) {
   try {
