@@ -7,7 +7,8 @@
 import { useState, useRef, ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Camera, Upload, Trash2, Plus, Loader2, Check, Copy, Share2, ChevronRight, PenLine } from 'lucide-react';
-import { parseReceipt, createSession } from '@/lib/api';
+import { createSession } from '@/lib/api';
+import { parseReceiptWithOCR } from '@/lib/ocr-parser';
 import type { ReceiptDraft } from '@/lib/types';
 
 function fmt(n: number) {
@@ -150,7 +151,7 @@ export default function UploadPage() {
     setDraft(null);          // clear previous draft so review panel hides
     setParsing(true);
     try {
-      const result = await parseReceipt(file);
+      const result = await parseReceiptWithOCR(file);
       setDraft({ ...result, merchant_name: result.merchant_name ?? '' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Could not read receipt';
@@ -311,7 +312,7 @@ export default function UploadPage() {
                 </div>
                 <div>
                   <p className="font-bold text-slate-800">Take or upload a photo</p>
-                  <p className="text-sm text-slate-500 mt-1">AI will read the items automatically</p>
+                  <p className="text-sm text-slate-500 mt-1">OCR will read the items automatically</p>
                 </div>
                 <div className="flex gap-2">
                   <div className="pill bg-sky-50 text-sky-600 border border-sky-200">

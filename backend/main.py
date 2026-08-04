@@ -143,8 +143,8 @@ async def get_food_image(q: str):
 async def parse_receipt(file: UploadFile = File(...)):
     """
     Step 1a: Upload the receipt photo.
-    Returns a draft receipt object for the uploader to review/correct
-    before creating the group session.
+    Note: OCR is now handled client-side for better performance and reliability.
+    This endpoint is kept for backward compatibility and can be used as a fallback.
     """
     allowed = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
     ct = file.content_type or "image/jpeg"
