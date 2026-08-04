@@ -6,13 +6,66 @@ import Tesseract from 'tesseract.js';
 import type { ReceiptDraft } from './types';
 
 /**
+ * Preprocess image to improve OCR accuracy
+ */
+async function preprocessImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Resize to improve OCR (larger = better text recognition)
+        const scale = Math.max(2000 / img.width, 2000 / img.height);
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        
+        // Draw with high quality
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        // Convert to grayscale and increase contrast
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        
+        for (let i = 0; i < data.length; i += 4) {
+          const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+          // Increase contrast
+          const contrast = 1.5;
+          const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+          const gray = factor * (avg - 128) + 128;
+          data[i] = data[i + 1] = data[i + 2] = Math.min(255, Math.max(0, gray));
+        }
+        
+        ctx.putImageData(imageData, 0, 0);
+        
+        // Get the data URL
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        resolve(dataUrl);
+      };
+      img.onerror = reject;
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
  * Extract text from an image using Tesseract.js OCR
  */
 async function extractTextFromImage(file: File): Promise<string> {
   console.log('Starting OCR with file:', file.name, file.type, file.size);
   
   try {
-    const result = await Tesseract.recognize(file, 'eng', {
+    // Preprocess image for better OCR
+    console.log('Preprocessing image...');
+    const processedImage = await preprocessImage(file);
+    
+    const result = await Tesseract.recognize(processedImage, 'eng', {
       logger: (m) => {
         console.log(`OCR Status: ${m.status} - ${Math.round(m.progress * 100)}%`);
       },
@@ -20,7 +73,7 @@ async function extractTextFromImage(file: File): Promise<string> {
     
     console.log('OCR completed successfully');
     console.log('Extracted text length:', result.data.text.length);
-    console.log('First 200 chars:', result.data.text.substring(0, 200));
+    console.log('First 500 chars:', result.data.text.substring(0, 500));
     
     return result.data.text;
   } catch (error) {
@@ -36,6 +89,7 @@ function parseReceiptText(text: string): ReceiptDraft {
   console.log('Parsing receipt text...');
   const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
   console.log('Number of lines:', lines.length);
+  console.log('All lines:', lines);
   
   const items: Array<{ name: string; price: number; quantity: number }> = [];
   let subtotal = 0;
@@ -44,9 +98,9 @@ function parseReceiptText(text: string): ReceiptDraft {
   let total = 0;
   let merchantName = '';
 
-  // More flexible patterns for matching different receipt formats
-  const pricePattern = /[$€£₹]?\s*(\d+\.\d{2})/;
-  const itemPattern = /^([A-Za-z][A-Za-z0-9\s\.\-\,\&]+?)\s+[$€£₹]?\s*(\d+\.\d{2})$/;
+  // Ultra-flexible patterns for matching different receipt formats
+  const pricePattern = /[$€£₹]?\s*(\d+\.?\d*)/;
+  const itemPattern = /^([A-Za-z][A-Za-z0-9\s\.\-\,\&\(\)]+?)\s+[$€£₹]?\s*(\d+\.?\d*)$/;
   const qtyPattern = /(\d+)\s*[xX]/;
   const subtotalPattern = /subtotal|sub\s*total/i;
   const taxPattern = /tax|vat|gst/i;
@@ -54,6 +108,8 @@ function parseReceiptText(text: string): ReceiptDraft {
   const totalPattern = /total|amount|grand\s*total/i;
 
   for (const line of lines) {
+    console.log('Processing line:', line);
+    
     // Try to extract merchant name (usually first line with letters)
     if (!merchantName && /^[A-Za-z\s&\.\-]+$/.test(line) && line.length > 3) {
       merchantName = line;
@@ -123,33 +179,52 @@ function parseReceiptText(text: string): ReceiptDraft {
     }
   }
 
-  // Fallback: if we couldn't parse items, try multiple simpler patterns
+  // Aggressive fallback: if we couldn't parse items, try multiple simpler patterns
   if (items.length === 0) {
-    console.log('Primary pattern failed, trying fallback patterns...');
+    console.log('Primary pattern failed, trying aggressive fallback patterns...');
     
-    // Pattern 1: Word followed by price
+    // Pattern 1: Any line with a number that looks like a price
     for (const line of lines) {
-      const match = line.match(/([A-Za-z][A-Za-z\s]+?)\s*(\d+\.\d{2})$/);
-      if (match && parseFloat(match[2]) > 0 && match[1].trim().length > 2) {
-        items.push({
-          name: match[1].trim(),
-          price: parseFloat(match[2]),
-          quantity: 1
-        });
-        console.log('Fallback pattern 1 found item:', match[1].trim(), match[2]);
+      const priceMatch = line.match(/(\d+\.\d{2})$/);
+      if (priceMatch) {
+        const price = parseFloat(priceMatch[1]);
+        const name = line.replace(priceMatch[0], '').trim();
+        // Very lenient: any text before a price could be an item name
+        if (name.length > 1 && price > 0 && price < 1000) {
+          items.push({ name, price, quantity: 1 });
+          console.log('Aggressive pattern 1 found item:', name, price);
+        }
       }
     }
     
-    // Pattern 2: Any line with a price at the end
+    // Pattern 2: Look for lines with currency symbols
     if (items.length === 0) {
       for (const line of lines) {
-        const match = line.match(/(\d+\.\d{2})$/);
+        if (line.includes('$') || line.includes('€') || line.includes('£')) {
+          const parts = line.split(/[$€£₹]/);
+          if (parts.length >= 2) {
+            const name = parts[0].trim();
+            const priceStr = parts[parts.length - 1].trim();
+            const price = parseFloat(priceStr);
+            if (name.length > 1 && price > 0 && price < 1000) {
+              items.push({ name, price, quantity: 1 });
+              console.log('Aggressive pattern 2 found item:', name, price);
+            }
+          }
+        }
+      }
+    }
+    
+    // Pattern 3: Any line with digits at the end (very aggressive)
+    if (items.length === 0) {
+      for (const line of lines) {
+        const match = line.match(/([A-Za-z\s]+)\s+(\d+\.?\d*)$/);
         if (match) {
-          const price = parseFloat(match[1]);
-          const name = line.replace(match[0], '').trim();
-          if (name.length > 2 && price > 0) {
+          const name = match[1].trim();
+          const price = parseFloat(match[2]);
+          if (name.length > 2 && price > 0 && price < 1000) {
             items.push({ name, price, quantity: 1 });
-            console.log('Fallback pattern 2 found item:', name, price);
+            console.log('Aggressive pattern 3 found item:', name, price);
           }
         }
       }
@@ -196,7 +271,7 @@ export async function parseReceiptWithOCR(file: File): Promise<ReceiptDraft> {
     const parsed = parseReceiptText(text);
     console.log('Parsed receipt:', parsed);
     
-    // Return the result even if no items found - user can manually enter
+    // Always return the result - even if empty, user can add items manually
     return parsed;
   } catch (error) {
     console.error('OCR parsing failed:', error);
