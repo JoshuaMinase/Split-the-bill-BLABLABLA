@@ -74,8 +74,16 @@ Rules:
 
 USER_TEXT = "Parse this receipt into the JSON shape described."
 
-# sentinel raised internally to signal 429/400 to the caller
+# sentinel raised internally to signal 429/400/safety-block to the caller
 _RATE_LIMITED = "RATE_LIMITED"
+
+# phrases that indicate a safety/content refusal rather than a real parse error
+_SAFETY_PHRASES = (
+    "user safety", "i'm sorry", "i cannot", "i can't", "unable to",
+    "as an ai", "content policy", "safety", "cannot process",
+    "not able to", "inappropriate", "refuse", "apologies",
+)
+
 
 # ─── Image preprocessing ───────────────────────────────────────────────────────
 
@@ -143,11 +151,30 @@ def _strip_fences(text: str) -> str:
 
 
 def _parse_json(raw: str) -> dict:
-    raw = _strip_fences(raw)
+    """
+    Parse JSON from AI response text.
+    - Strips markdown fences
+    - Detects safety/refusal messages and raises RuntimeError(_RATE_LIMITED)
+      so the caller falls through to the next provider
+    - Raises ValueError on genuinely bad JSON
+    """
+    cleaned = _strip_fences(raw)
+
+    # Detect safety / refusal responses before trying to parse JSON
+    lower = cleaned.lower()
+    if any(phrase in lower for phrase in _SAFETY_PHRASES):
+        print(f"Safety refusal detected, falling through to next provider. Raw: {cleaned[:120]}")
+        raise RuntimeError(_RATE_LIMITED)
+
     try:
-        parsed = json.loads(raw)
+        parsed = json.loads(cleaned)
     except json.JSONDecodeError as e:
-        raise ValueError(f"AI returned non-JSON output: {raw[:300]}") from e
+        # If it doesn't look like JSON at all, it might be a verbose refusal
+        if not cleaned.startswith("{"):
+            print(f"Non-JSON response (likely refusal), falling through. Raw: {cleaned[:120]}")
+            raise RuntimeError(_RATE_LIMITED)
+        raise ValueError(f"AI returned non-JSON output: {cleaned[:300]}") from e
+
     if "error" in parsed:
         raise ValueError(parsed["error"])
     return parsed
@@ -338,10 +365,16 @@ async def parse_receipt_image(image_bytes: bytes, content_type: str = "image/jpe
             return result
         except RuntimeError as e:
             if _RATE_LIMITED in str(e):
-                print(f"{name} rate-limited — trying next tier.")
+                print(f"{name} skipped (rate-limit / safety block) — trying next tier.")
                 continue
-            raise   # real error (bad key, bad image) — surface it
+            raise   # real error (bad key) — surface it
+        except ValueError as e:
+            # Treat unexpected ValueError (bad JSON, empty response) as a soft failure
+            # and try the next provider rather than showing the user a cryptic error
+            print(f"{name} parse error ({e}) — trying next tier.")
+            continue
 
     raise RuntimeError(
-        "All AI providers are currently rate-limited. Please wait a minute and try again."
+        "Couldn't read the receipt automatically. "
+        "Please enter the items manually — tap 'Enter manually' below."
     )
