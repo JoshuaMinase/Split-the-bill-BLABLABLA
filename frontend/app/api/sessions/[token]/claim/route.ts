@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '../../../../../lib/prisma';
 
-export async function POST(request: Request, { params }: { params: { token: string } }) {
+export async function POST(request: any, context: any) {
+  const params = context?.params || {};
   const token = params.token;
   const body = await request.json().catch(() => ({}));
   const { item_id, participant_id, claimed } = body;

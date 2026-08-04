@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '../../../../../lib/prisma';
 import { calculateSplits } from '../../../../../src/lib/calculations';
 
-export async function POST(_request: Request, { params }: { params: { token: string } }) {
+export async function POST(_request: any, context: any) {
+  const params = context?.params || {};
   const token = params.token;
   const sess = await prisma.session.findUnique({ where: { token } });
   if (!sess) return NextResponse.json({ error: 'Session not found' }, { status: 404 });

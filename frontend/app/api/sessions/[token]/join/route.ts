@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '../../../../../lib/prisma';
 import { randomUUID } from 'crypto';
 
-export async function POST(request: Request, { params }: { params: { token: string } }) {
+export async function POST(request: any, context: any) {
+  const params = context?.params || {};
   const token = params.token;
   const body = await request.json().catch(() => ({}));
   const { name, device_token } = body;
