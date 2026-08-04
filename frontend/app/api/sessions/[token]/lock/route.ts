@@ -7,23 +7,24 @@ export async function POST(_request: any, context: any) {
   const token = params.token;
   const sess = await prisma.session.findUnique({ where: { token } });
   if (!sess) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
-  if (sess.data.status === 'locked') return NextResponse.json({ ok: true, results: sess.data.results });
-  if (!sess.data.payer) return NextResponse.json({ error: 'Choose a payer before locking' }, { status: 400 });
-  if (!sess.data.participants || sess.data.participants.length === 0) return NextResponse.json({ error: 'No participants' }, { status: 400 });
+  const sdata: any = sess.data || {};
+  if (sdata.status === 'locked') return NextResponse.json({ ok: true, results: sdata.results });
+  if (!sdata.payer) return NextResponse.json({ error: 'Choose a payer before locking' }, { status: 400 });
+  if (!sdata.participants || sdata.participants.length === 0) return NextResponse.json({ error: 'No participants' }, { status: 400 });
 
-  const receipt = sess.data.receipt || { items: [], tax: 0, tip: 0 };
-  const participantIds = (sess.data.participants || []).map((p: any) => p.id);
+  const receipt = sdata.receipt || { items: [], tax: 0, tip: 0 };
+  const participantIds = (sdata.participants || []).map((p: any) => p.id);
 
   const results = calculateSplits(
     receipt.items || [],
-    sess.data.claims || [],
+    sdata.claims || [],
     Number(receipt.tax) || 0,
     Number(receipt.tip) || 0,
     participantIds,
-    sess.data.payer.participant_id
+    sdata.payer.participant_id
   );
 
-  const updated = { ...sess.data, status: 'locked', results };
+  const updated = { ...sdata, status: 'locked', results };
   await prisma.session.update({ where: { token }, data: { data: updated } });
   return NextResponse.json({ ok: true, results });
 }

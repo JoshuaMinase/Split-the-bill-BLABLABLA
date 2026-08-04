@@ -10,11 +10,12 @@ export async function POST(request: any, context: any) {
 
   const sess = await prisma.session.findUnique({ where: { token } });
   if (!sess) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+  const sdata: any = sess.data || {};
 
-  const participantIds = (sess.data.participants || []).map((p: any) => p.id);
+  const participantIds = (sdata.participants || []).map((p: any) => p.id);
   if (!participantIds.includes(participant_id)) return NextResponse.json({ error: 'participant not in session' }, { status: 400 });
 
   const payer = { participant_id, account_type, account_details };
-  await prisma.session.update({ where: { token }, data: { data: { ...sess.data, payer } } });
+  await prisma.session.update({ where: { token }, data: { data: { ...sdata, payer } } });
   return NextResponse.json({ ok: true });
 }
