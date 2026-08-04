@@ -1,11 +1,5 @@
-# ── Internal dev tooling — not part of the app ───────────────
-.ai/
-DEPLOY.md
-run_orchestrator.bat
-
 # ── Secrets — NEVER commit these ─────────────────────────────
 backend/.env
-.ai/.env
 frontend/.env.local
 frontend/.env*.local
 
@@ -14,11 +8,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.Python
 .venv/
 venv/
 env/
-ENV/
 *.egg-info/
 dist/
 build/
@@ -32,7 +24,6 @@ htmlcov/
 .coverage
 .coverage.*
 coverage.xml
-*.cover
 
 # ── Node / Next.js ────────────────────────────────────────────
 node_modules/
@@ -40,17 +31,12 @@ frontend/.next/
 frontend/out/
 frontend/build/
 frontend/.turbo/
-.npm
 *.tsbuildinfo
 next-env.d.ts
 
-# ── OS junk ───────────────────────────────────────────────────
+# ── OS ────────────────────────────────────────────────────────
 .DS_Store
-.DS_Store?
 ._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 desktop.ini
 
@@ -60,17 +46,15 @@ desktop.ini
 *.swp
 *.swo
 *~
-.project
-.classpath
 
 # ── Logs ─────────────────────────────────────────────────────
 *.log
 logs/
-.ai/logs/
 
-# ── Orchestrator runtime outputs (keep structure, not outputs) ─
-.ai/outputs/
-.ai/memory/new_task.md
+# ── Local dev tooling (not part of the app) ───────────────────
+.ai/
+DEPLOY.md
+run_orchestrator.bat
 
 # ── MongoDB local data ────────────────────────────────────────
 data/db/
