@@ -15,6 +15,7 @@ Railway deployment checklist — set env and run Prisma migrations
 3) Run Prisma migrations on deploy
    - Preferred: Add a post-deploy command in Railway to run migrations once:
        npx prisma migrate deploy
+     Alternatively you can use `npx prisma db push` during deploy for schema sync without migration files.
    - Alternatively, run locally against your Railway Postgres and then deploy.
 
 4) Verify Prisma client generation
@@ -23,7 +24,7 @@ Railway deployment checklist — set env and run Prisma migrations
 5) Add AI keys to Railway only when you have them. Keep keys secret.
 
 6) Healthcheck
-   - Railway will ping the Next.js app. The app exposes /api/health (or /health if present).
+   - Railway will ping the Next.js app. The app exposes /api/health and a DB smoke-check endpoint /api/health-db which performs a small read/write/delete to validate Prisma and DB access.
 
 Notes
 - This repo stores session data in Postgres (single JSON column). If you prefer Mongo, keep the existing backend instead.
