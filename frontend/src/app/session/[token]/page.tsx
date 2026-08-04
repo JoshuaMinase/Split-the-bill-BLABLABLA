@@ -1,45 +1,36 @@
 'use client';
 /**
- * Page 2 — Item claiming (/session/[token])
- *
- * Flow:
- *  1. Enter your name (stored in localStorage so refresh doesn't re-ask).
- *  2. See receipt items as tappable cards — tap to claim / un-claim.
- *  3. Real-time: everyone sees each other's claims via WebSocket.
- *  4. Creator taps "Set Payer →" to proceed. Auto-redirect when locked.
+ * Step 2 — Claiming items
+ * Join with name → claim items → see everyone's claims live
  */
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Loader2, Users, Lock, ChevronRight, Sparkles } from 'lucide-react';
+import { Loader2, Users, Lock, ChevronRight } from 'lucide-react';
 import { joinSession, toggleClaim } from '@/lib/api';
 import { useSession } from '@/hooks/useSession';
 import { getDeviceToken } from '@/lib/device';
 import type { ReceiptItem, Participant } from '@/lib/types';
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
-
 function fmt(n: number) {
   return n.toFixed(2);
 }
 
-/** Generate a consistent pastel colour from a string (for avatars) */
 function avatarColor(name: string): string {
   const palette = [
-    'bg-violet-400', 'bg-pink-400', 'bg-indigo-400', 'bg-sky-400',
-    'bg-teal-400',   'bg-emerald-400', 'bg-amber-400', 'bg-orange-400',
+    'bg-sky-400', 'bg-blue-400', 'bg-violet-400', 'bg-pink-400',
+    'bg-rose-400', 'bg-orange-400', 'bg-amber-400', 'bg-lime-400',
   ];
   let hash = 0;
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffffffff;
   return palette[Math.abs(hash) % palette.length];
 }
 
-/** First letter avatar badge */
 function Avatar({ name, size = 'sm', isMe = false }: { name: string; size?: 'sm' | 'md'; isMe?: boolean }) {
-  const bg = isMe ? 'bg-brand-gradient' : avatarColor(name);
-  const sz = size === 'sm' ? 'w-7 h-7 text-xs' : 'w-10 h-10 text-sm';
+  const bg = isMe ? 'bg-sky-500' : avatarColor(name);
+  const sz = size === 'md' ? 'w-10 h-10 text-sm' : 'w-7 h-7 text-xs';
   return (
     <div
-      className={`${sz} ${bg} rounded-full flex items-center justify-center font-bold text-white shadow-sm ring-2 ${isMe ? 'ring-brand-300' : 'ring-white'} flex-shrink-0`}
+      className={`${sz} ${bg} rounded-full flex items-center justify-center font-bold text-white shadow-soft ring-2 ${isMe ? 'ring-sky-300' : 'ring-white'} flex-shrink-0`}
       title={name}
     >
       {name.charAt(0).toUpperCase()}
@@ -47,18 +38,17 @@ function Avatar({ name, size = 'sm', isMe = false }: { name: string; size?: 'sm'
   );
 }
 
-// ─── Item card ────────────────────────────────────────────────────────────────
+// ─── Food image ───────────────────────────────────────────────────────────────
 
 function FoodImage({ url, name }: { url?: string | null; name: string }) {
   const [failed, setFailed] = useState(false);
   if (!url || failed) {
-    // Emoji fallback — deterministic from item name
-    const emojis = ['🍔','🍕','🥗','🍜','🍣','🥩','🍗','🥘','🍱','🌮','🥙','🍛','🫕','🥪'];
+    const emojis = ['🍔','🍕','🥗','🍜','🍣','🥩','🍗','🥘','🍱','🌮'];
     let hash = 0;
     for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffffffff;
     const emoji = emojis[Math.abs(hash) % emojis.length];
     return (
-      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-100 to-purple-100 flex items-center justify-center text-2xl flex-shrink-0">
+      <div className="w-12 h-12 rounded-xl bg-sky-100 flex items-center justify-center text-xl flex-shrink-0">
         {emoji}
       </div>
     );
@@ -69,10 +59,12 @@ function FoodImage({ url, name }: { url?: string | null; name: string }) {
       src={url}
       alt={name}
       onError={() => setFailed(true)}
-      className="w-14 h-14 rounded-2xl object-cover flex-shrink-0 bg-gray-100"
+      className="w-12 h-12 rounded-xl object-cover flex-shrink-0 bg-slate-100"
     />
   );
 }
+
+// ─── Item card ────────────────────────────────────────────────────────────────
 
 function ItemCard({
   item,
@@ -87,74 +79,63 @@ function ItemCard({
   onToggle: () => void;
   isPending: boolean;
 }) {
-  const iClaimed = claimants.some((p) => p.id === myParticipantId);
+  const iClaimed = claimants.some(p => p.id === myParticipantId);
   const sharedCost = claimants.length > 0 ? item.price * item.quantity / claimants.length : null;
 
   return (
     <button
       onClick={onToggle}
       disabled={isPending}
-      aria-pressed={iClaimed}
-      className={`w-full text-left rounded-3xl border-2 p-3 transition-all duration-150 select-none
+      className={`w-full text-left rounded-xl border-2 p-3 transition-all duration-150
         ${iClaimed
-          ? 'border-brand-400 bg-gradient-to-br from-brand-50 to-purple-50 shadow-card'
-          : 'border-gray-100 bg-white shadow-sm hover:border-brand-200 hover:shadow-card'
+          ? 'border-sky-400 bg-sky-50 shadow-md'
+          : 'border-slate-200 bg-white hover:border-sky-300 hover:shadow-soft'
         }
-        ${isPending ? 'opacity-60 pointer-events-none' : 'active:scale-[0.97]'}
+        ${isPending ? 'opacity-60 pointer-events-none' : 'active:scale-[0.98]'}
       `}
     >
       <div className="flex items-center gap-3">
-        {/* Food image */}
         <FoodImage url={item.image_url} name={item.name} />
 
-        {/* Item info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-1.5">
-            <p className="font-semibold text-gray-800 truncate text-sm">{item.name}</p>
+            <p className="font-semibold text-slate-800 truncate text-sm">{item.name}</p>
             {item.quantity > 1 && (
-              <span className="text-xs text-gray-400 flex-shrink-0">×{item.quantity}</span>
+              <span className="text-xs text-slate-400">×{item.quantity}</span>
             )}
           </div>
 
-          {/* Claimants row */}
           {claimants.length > 0 && (
             <div className="flex items-center gap-1.5 mt-1">
-              <div className="flex -space-x-1.5">
-                {claimants.slice(0, 5).map((p) => (
+              <div className="flex -space-x-1">
+                {claimants.slice(0, 4).map(p => (
                   <Avatar key={p.id} name={p.name} size="sm" isMe={p.id === myParticipantId} />
                 ))}
-                {claimants.length > 5 && (
-                  <div className="w-7 h-7 rounded-full bg-gray-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-gray-500">
-                    +{claimants.length - 5}
+                {claimants.length > 4 && (
+                  <div className="w-7 h-7 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-500">
+                    +{claimants.length - 4}
                   </div>
                 )}
               </div>
               {claimants.length > 1 && sharedCost !== null && (
-                <span className="text-xs text-gray-400">
-                  {fmt(sharedCost)} each
-                </span>
+                <span className="text-xs text-slate-400">{fmt(sharedCost)} each</span>
               )}
             </div>
           )}
         </div>
 
-        {/* Price + check */}
         <div className="flex items-center gap-2 flex-shrink-0">
           <div className="text-right">
-            <p className={`font-bold text-sm ${iClaimed ? 'text-brand-700' : 'text-gray-700'}`}>
+            <p className={`font-bold text-sm ${iClaimed ? 'text-sky-600' : 'text-slate-700'}`}>
               {fmt(item.price * item.quantity)}
             </p>
-            {iClaimed && sharedCost !== null && claimants.length > 1 && (
-              <p className="text-[10px] text-brand-500 mt-0.5">my share</p>
-            )}
           </div>
           <div
             className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all
-              ${iClaimed ? 'border-brand-500 bg-brand-500' : 'border-gray-300 bg-white'}
-            `}
+              ${iClaimed ? 'border-sky-500 bg-sky-500' : 'border-slate-300 bg-white'}`}
           >
             {isPending
-              ? <Loader2 size={10} className="text-brand-500 animate-spin" />
+              ? <Loader2 size={10} className="text-sky-500 animate-spin" />
               : iClaimed && <span className="text-white text-xs font-black">✓</span>
             }
           </div>
@@ -164,7 +145,7 @@ function ItemCard({
   );
 }
 
-// ─── Name entry screen ────────────────────────────────────────────────────────
+// ─── Name entry ───────────────────────────────────────────────────────────────
 
 function JoinScreen({
   session,
@@ -190,55 +171,51 @@ function JoinScreen({
   }
 
   return (
-    <div className="space-y-6 animate-slide-up">
-      {/* Hero */}
-      <div className="rounded-3xl bg-brand-gradient p-6 text-white text-center shadow-card-lg">
-        <div className="text-4xl mb-3">👋</div>
-        <h1 className="text-xl font-extrabold">Join the split!</h1>
+    <div className="space-y-5 animate-slide-up">
+      <div className="card p-5 text-center">
+        <div className="text-4xl mb-2">👋</div>
+        <h1 className="text-xl font-extrabold text-slate-800">Join the split</h1>
         {session.receipt.merchant_name && (
-          <p className="text-white/80 text-sm mt-1">
-            {session.receipt.merchant_name} · {session.participants.length + 1} splitting
-          </p>
+          <p className="text-sm text-slate-500 mt-1">{session.receipt.merchant_name}</p>
         )}
       </div>
 
-      {/* Who's already here */}
       {session.participants.length > 0 && (
-        <div className="bg-white rounded-3xl border border-gray-100 p-4 shadow-card">
-          <p className="section-label">Already joined</p>
+        <div className="card p-4">
+          <p className="label">Already here ({session.participants.length})</p>
           <div className="flex flex-wrap gap-2">
             {session.participants.map((p: Participant) => (
-              <div key={p.id} className="flex items-center gap-1.5 bg-brand-50 rounded-full px-3 py-1.5">
+              <div key={p.id} className="flex items-center gap-1.5 pill bg-sky-50 text-sky-600 border border-sky-200">
                 <Avatar name={p.name} size="sm" />
-                <span className="text-xs font-semibold text-brand-700">{p.name}</span>
+                <span className="font-semibold">{p.name}</span>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Name form */}
-      <div className="bg-white rounded-3xl border border-gray-100 p-5 shadow-card space-y-3">
-        <label className="section-label">Your name</label>
+      <div className="card p-5 space-y-3">
+        <label className="label">Your name</label>
         <input
           autoFocus
-          className="input-field"
-          placeholder="e.g. Abebe, Sara…"
+          className="input"
+          placeholder="e.g. Sara, John..."
           value={name}
           maxLength={30}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}
         />
-        {err && <p className="text-xs text-rose-600">{err}</p>}
+        {err && <p className="text-xs text-red-600">{err}</p>}
         <button
           onClick={submit}
           disabled={joining || !name.trim()}
           className="btn-primary"
         >
-          {joining
-            ? <><Loader2 size={17} className="animate-spin" /> Joining…</>
-            : <><span>Let's go!</span><ChevronRight size={18} /></>
-          }
+          {joining ? (
+            <><Loader2 size={16} className="animate-spin" /> Joining...</>
+          ) : (
+            <>Join<ChevronRight size={16} /></>
+          )}
         </button>
       </div>
     </div>
@@ -249,20 +226,18 @@ function JoinScreen({
 
 export default function SessionPage() {
   const { token } = useParams<{ token: string }>();
-  const router    = useRouter();
+  const router = useRouter();
   const { session, loading, error } = useSession(token);
 
   const [participantId, setParticipantId] = useState<string | null>(null);
   const [pendingItemId, setPendingItemId] = useState<string | null>(null);
 
-  // Auto-redirect when host locks the session
   useEffect(() => {
     if (session?.status === 'locked') {
       router.replace(`/session/${token}/results`);
     }
   }, [session?.status, token, router]);
 
-  // Restore from localStorage
   useEffect(() => {
     try {
       const stored = localStorage.getItem(`splitreceipt_pid_${token}`);
@@ -270,7 +245,7 @@ export default function SessionPage() {
     } catch { /* ignore */ }
   }, [token]);
 
-  // ── Join ───────────────────────────────────────────────────────────────────
+  // ── Join ──────────────────────────────────────────────────────────────────
 
   async function handleJoin(name: string) {
     const deviceToken = getDeviceToken();
@@ -281,12 +256,12 @@ export default function SessionPage() {
     } catch { /* ignore */ }
   }
 
-  // ── Claim toggle ──────────────────────────────────────────────────────────
+  // ── Toggle claim ──────────────────────────────────────────────────────────
 
   async function handleToggle(item: ReceiptItem) {
     if (!participantId || pendingItemId) return;
     const alreadyClaimed = session!.claims.some(
-      (c) => c.item_id === item.id && c.participant_id === participantId
+      c => c.item_id === item.id && c.participant_id === participantId
     );
     setPendingItemId(item.id);
     try {
@@ -296,23 +271,21 @@ export default function SessionPage() {
     }
   }
 
-  // ── Loading / error guards ────────────────────────────────────────────────
+  // ── Guards ────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center gap-4 pt-20">
-        <div className="w-16 h-16 rounded-3xl bg-brand-gradient flex items-center justify-center shadow-glow animate-pulse-slow">
-          <Sparkles size={28} className="text-white" />
-        </div>
-        <p className="text-sm text-gray-500">Loading session…</p>
+      <div className="flex flex-col items-center gap-4 pt-16">
+        <Loader2 size={48} className="text-sky-500 animate-spin" />
+        <p className="text-sm text-slate-500">Loading session...</p>
       </div>
     );
   }
 
   if (error || !session) {
     return (
-      <div className="bg-rose-50 border border-rose-200 rounded-3xl p-5 text-sm text-rose-700">
-        {error ?? 'Session not found. Check the link.'}
+      <div className="card !bg-red-50 !border-red-200 p-5 text-sm text-red-700">
+        {error ?? 'Session not found.'}
       </div>
     );
   }
@@ -323,7 +296,7 @@ export default function SessionPage() {
     return <JoinScreen session={session} onJoin={handleJoin} />;
   }
 
-  // ── Build helpers ─────────────────────────────────────────────────────────
+  // ── Build data ────────────────────────────────────────────────────────────
 
   const me = session.participants.find((p: Participant) => p.id === participantId);
   const participantById = Object.fromEntries(
@@ -337,65 +310,55 @@ export default function SessionPage() {
     if (p) claimantsByItem[c.item_id].push(p);
   }
 
-  // My running subtotal (pre-tax, pre-tip)
   const mySubtotal = session.receipt.items.reduce((sum, item) => {
     const cl = claimantsByItem[item.id];
     if (!cl) return sum;
-    const mine = cl.find((p) => p.id === participantId);
+    const mine = cl.find(p => p.id === participantId);
     if (!mine) return sum;
     return sum + (item.price * item.quantity) / cl.length;
   }, 0);
 
   const isCreator = session.participants[0]?.id === participantId;
-  const totalClaims = session.claims.length;
 
-  // ── Main claiming view ────────────────────────────────────────────────────
+  // ── Main view ─────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-4 animate-fade-in">
-
-      {/* Restaurant + avatars row */}
       <div className="flex items-center gap-3">
         <div className="flex-1 min-w-0">
-          <h1 className="font-extrabold text-gray-900 text-lg leading-tight truncate">
+          <h1 className="font-extrabold text-slate-800 text-lg truncate">
             {session.receipt.merchant_name ?? 'Split the bill'}
           </h1>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Tap everything <strong>you</strong> ate, {me?.name ?? 'friend'}
+          <p className="text-xs text-slate-500 mt-0.5">
+            Tap what <strong>you</strong> ate, {me?.name ?? 'friend'}
           </p>
         </div>
-        {/* Live participant avatars */}
-        <div className="flex -space-x-2 flex-shrink-0">
-          {session.participants.slice(0, 5).map((p: Participant) => (
+        <div className="flex -space-x-1.5 flex-shrink-0">
+          {session.participants.slice(0, 4).map((p: Participant) => (
             <Avatar key={p.id} name={p.name} size="sm" isMe={p.id === participantId} />
           ))}
-          {session.participants.length > 5 && (
-            <div className="w-7 h-7 rounded-full bg-gray-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-gray-500">
-              +{session.participants.length - 5}
+          {session.participants.length > 4 && (
+            <div className="w-7 h-7 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-500">
+              +{session.participants.length - 4}
             </div>
           )}
         </div>
       </div>
 
-      {/* Live status bar */}
-      <div className="flex items-center gap-2 bg-white rounded-2xl border border-gray-100 px-3 py-2 shadow-sm">
+      <div className="card p-3 flex items-center gap-2 text-xs">
         <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
         </span>
-        <span className="text-xs text-gray-500">
-          <strong className="text-gray-700">{session.participants.length}</strong> people live
-          {totalClaims > 0 && (
-            <> · <strong className="text-brand-600">{totalClaims}</strong> claim{totalClaims !== 1 ? 's' : ''}</>
-          )}
+        <span className="text-slate-500">
+          <strong className="text-slate-700">{session.participants.length}</strong> live · <strong className="text-sky-600">{session.claims.length}</strong> claims
         </span>
-        <span className="ml-auto text-xs text-gray-400 font-medium">
+        <span className="ml-auto text-slate-400 font-medium">
           Total {fmt(session.receipt.total)}
         </span>
       </div>
 
-      {/* Item cards */}
-      <div className="space-y-2.5">
+      <div className="space-y-2">
         {session.receipt.items.map((item: ReceiptItem) => (
           <ItemCard
             key={item.id}
@@ -408,47 +371,44 @@ export default function SessionPage() {
         ))}
       </div>
 
-      {/* My running total */}
-      <div className="rounded-3xl bg-brand-gradient p-4 flex items-center justify-between shadow-glow-sm">
+      <div className="card-sky p-4 flex items-center justify-between">
         <div>
-          <p className="text-white/80 text-xs font-medium">Your share so far</p>
-          <p className="text-white font-black text-2xl mt-0.5">{fmt(mySubtotal)}</p>
+          <p className="text-xs text-slate-500 font-medium">Your share so far</p>
+          <p className="text-slate-800 font-black text-2xl mt-0.5">{fmt(mySubtotal)}</p>
         </div>
         <div className="text-right">
-          <p className="text-white/70 text-xs">of {fmt(session.receipt.total)}</p>
+          <p className="text-xs text-slate-400">of {fmt(session.receipt.total)}</p>
           {session.receipt.tax > 0 && (
-            <p className="text-white/60 text-[10px] mt-0.5">+ tax/tip proportional</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">+ tax/tip proportional</p>
           )}
         </div>
       </div>
 
-      {/* Creator action */}
       {isCreator && session.status === 'open' && (
-        <div className="rounded-3xl border-2 border-dashed border-brand-300 bg-brand-50 p-4 space-y-3">
+        <div className="card p-4 space-y-3 border-2 border-dashed !border-sky-300 !bg-sky-50">
           <div className="flex items-center gap-2">
-            <Lock size={14} className="text-brand-500" />
-            <p className="text-xs font-semibold text-brand-700">Ready to lock the bill?</p>
+            <Lock size={13} className="text-sky-600" />
+            <p className="text-xs font-semibold text-sky-700">Ready to lock?</p>
           </div>
-          <p className="text-xs text-gray-500">
-            Once everyone has claimed their items, go to the next step to choose who paid.
+          <p className="text-xs text-slate-600">
+            Once everyone's claimed their items, lock the bill to see final amounts.
           </p>
           <button
             onClick={() => router.push(`/session/${token}/results`)}
             className="btn-primary !py-3"
           >
-            <Lock size={16} />
+            <Lock size={15} />
             <span>Set Payer & Lock</span>
-            <ChevronRight size={16} className="ml-auto" />
+            <ChevronRight size={15} className="ml-auto" />
           </button>
         </div>
       )}
 
-      {/* Non-creator nudge */}
       {!isCreator && session.status === 'open' && (
         <div className="text-center py-2">
-          <p className="text-xs text-gray-400 flex items-center justify-center gap-1.5">
-            <Users size={12} />
-            Waiting for the creator to lock the bill
+          <p className="text-xs text-slate-400 flex items-center justify-center gap-1.5">
+            <Users size={11} />
+            Waiting for the creator to lock
           </p>
         </div>
       )}
