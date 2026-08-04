@@ -142,10 +142,16 @@ class TestMarkdownStripping:
             ]
         }
 
+    def _mock_openrouter_response(self, content: str) -> dict:
+        """Build a fake OpenRouter (OpenAI-compatible) response dict."""
+        return {
+            "choices": [{"message": {"content": content}}]
+        }
+
     def _call_parse_with_mock_response(self, content: str) -> dict:
         """
         Call parse_receipt_image with a mocked httpx client that returns
-        a fake Gemini response.
+        a fake Gemini response (primary path).
         """
         fake_response = self._mock_gemini_response(content)
         mock_resp = MagicMock()
@@ -187,7 +193,7 @@ class TestMarkdownStripping:
             self._call_parse_with_mock_response(payload)
 
     def test_missing_candidates_raises_value_error(self):
-        """If API returns a response without 'candidates', raise ValueError."""
+        """If Gemini returns a response without 'candidates', raise ValueError."""
         fake_response = {"error": {"code": 500, "message": "internal error"}}
         mock_resp = MagicMock()
         mock_resp.json.return_value = fake_response
@@ -205,6 +211,35 @@ class TestMarkdownStripping:
                 run(grok_service.parse_receipt_image(b"fake", "image/jpeg"))
 
     def test_no_api_key_raises_runtime_error(self):
-        with patch("grok_service.GEMINI_API_KEY", ""):
-            with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
+        with patch("grok_service.GEMINI_API_KEY", ""), \
+             patch("grok_service.OPENROUTER_API_KEY", ""):
+            with pytest.raises(RuntimeError, match="No AI API keys"):
                 run(grok_service.parse_receipt_image(b"fake", "image/jpeg"))
+
+    def test_gemini_rate_limit_falls_back_to_openrouter(self):
+        """When Gemini returns 429, should automatically call OpenRouter."""
+        # Gemini response: 429
+        gemini_resp = MagicMock()
+        gemini_resp.status_code = 429
+        gemini_resp.raise_for_status = MagicMock()
+
+        # OpenRouter response: valid receipt JSON
+        payload = '{"merchant_name": "Fallback", "items": [], "subtotal": 5, "tax": 0, "tip": 0, "total": 5}'
+        openrouter_resp = MagicMock()
+        openrouter_resp.status_code = 200
+        openrouter_resp.json.return_value = self._mock_openrouter_response(payload)
+        openrouter_resp.raise_for_status = MagicMock()
+
+        # First call returns 429 (Gemini), second call returns 200 (OpenRouter)
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=[gemini_resp, openrouter_resp])
+
+        with patch("grok_service.GEMINI_API_KEY", "fake-gemini-key"), \
+             patch("grok_service.OPENROUTER_API_KEY", "fake-or-key"), \
+             patch("httpx.AsyncClient", return_value=mock_client):
+            result = run(grok_service.parse_receipt_image(b"fake", "image/jpeg"))
+
+        assert result["merchant_name"] == "Fallback"
+        assert mock_client.post.call_count == 2  # Gemini tried, then OpenRouter
