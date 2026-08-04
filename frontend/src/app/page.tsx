@@ -7,7 +7,7 @@
 import { useState, useRef, ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Camera, Upload, Trash2, Plus, Loader2, Check, Copy, Share2, ChevronRight, PenLine } from 'lucide-react';
-import { createSession } from '@/lib/api';
+import { parseReceipt, createSession } from '@/lib/api';
 import { parseReceiptWithOCR } from '@/lib/ocr-parser';
 import type { ReceiptDraft } from '@/lib/types';
 
@@ -151,12 +151,21 @@ export default function UploadPage() {
     setDraft(null);          // clear previous draft so review panel hides
     setParsing(true);
     try {
+      // Try client-side OCR first
+      console.log('Attempting client-side OCR...');
       const result = await parseReceiptWithOCR(file);
       setDraft({ ...result, merchant_name: result.merchant_name ?? '' });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Could not read receipt';
-      setParseError(msg);
-      // Do NOT auto-open empty draft — show the error with a "Try again / Enter manually" choice
+    } catch (ocrError) {
+      console.log('Client-side OCR failed, trying backend:', ocrError);
+      try {
+        // Fallback to backend OCR
+        console.log('Attempting backend OCR...');
+        const result = await parseReceipt(file);
+        setDraft({ ...result, merchant_name: result.merchant_name ?? '' });
+      } catch (backendError) {
+        const msg = `OCR failed: ${ocrError instanceof Error ? ocrError.message : 'Unknown error'}. Backend also failed: ${backendError instanceof Error ? backendError.message : 'Unknown error'}`;
+        setParseError(msg);
+      }
     } finally {
       setParsing(false);
     }
