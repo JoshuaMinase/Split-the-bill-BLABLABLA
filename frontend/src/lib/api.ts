@@ -35,7 +35,11 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 export async function parseReceipt(file: File): Promise<ReceiptDraft> {
   const form = new FormData();
   form.append('file', file);
-  const res = await fetch(`${BASE_URL}/api/receipts/parse`, { method: 'POST', body: form });
+  const res = await fetch(`${BASE_URL}/api/receipts/parse`, {
+    method: 'POST',
+    body: form,
+    signal: AbortSignal.timeout(90_000), // 90s — Gemini vision can be slow
+  });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.detail ?? `Upload failed (${res.status})`);
