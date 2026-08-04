@@ -11,7 +11,7 @@ const BASE_URL =
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
-    signal: AbortSignal.timeout(30_000),  // 30s timeout on all requests
+    signal: AbortSignal.timeout(60_000),  // 60s timeout on all requests (increased for image fetching)
     ...init,
   });
 

@@ -91,7 +91,7 @@ async def _mealdb_image(name: str, client: httpx.AsyncClient) -> str | None:
     try:
         resp = await client.get(
             MEALDB_SEARCH.format(urllib.parse.quote(name)),
-            timeout=4.0,
+            timeout=10.0,  # Increased timeout
         )
         data = resp.json()
         meals = data.get("meals") or []
@@ -107,7 +107,7 @@ async def _foodish_image(category: str, client: httpx.AsyncClient) -> str | None
     try:
         resp = await client.get(
             f"https://foodish-api.com/api/images/{category}",
-            timeout=4.0,
+            timeout=10.0,  # Increased timeout
         )
         data = resp.json()
         return data.get("image")

@@ -182,14 +182,25 @@ async def create_session(receipt: ReceiptIn):
     Returns the session token used as the share link identifier.
     """
     data = receipt.model_dump()
-    # Fetch images for items that don't already have one (concurrently)
+    # Fetch images for items that don't already have one (concurrently with error handling)
     items_needing_images = [i for i in data.get("items", []) if not i.get("image_url")]
     if items_needing_images:
-        image_urls = await asyncio.gather(
-            *[food_image_url_async(item.get("name", "")) for item in items_needing_images]
-        )
-        for item, url in zip(items_needing_images, image_urls):
-            item["image_url"] = url
+        try:
+            # Use return_exceptions=True to prevent one failure from stopping all
+            image_urls = await asyncio.wait_for(
+                asyncio.gather(
+                    *[food_image_url_async(item.get("name", "")) for item in items_needing_images],
+                    return_exceptions=True
+                ),
+                timeout=15.0  # Total timeout for all image fetches
+            )
+            for item, url in zip(items_needing_images, image_urls):
+                # Only set image_url if the fetch succeeded (not an exception)
+                if not isinstance(url, Exception):
+                    item["image_url"] = url
+        except asyncio.TimeoutError:
+            # If image fetching times out, just proceed without images
+            print("Image fetching timed out, proceeding without images")
     doc = new_session_doc(data)
     await get_sessions_col().insert_one(doc)
     return {"token": doc["token"], "session": public_view(doc)}
