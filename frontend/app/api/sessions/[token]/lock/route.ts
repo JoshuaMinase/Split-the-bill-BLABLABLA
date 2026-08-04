@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+export const runtime = 'nodejs';
 import { prisma } from '../../../../../lib/prisma';
 import { calculateSplits } from '../../../../../src/lib/calculations';
 
