@@ -9,24 +9,32 @@ const BASE_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ?? 'http://localhost:8000';
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  console.log(`API Request: ${BASE_URL}${path}`, init?.method || 'GET');
+  console.log('Request body:', init?.body);
+  
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
-    signal: AbortSignal.timeout(60_000),  // 60s timeout on all requests (increased for image fetching)
+    signal: AbortSignal.timeout(120_000),  // 120s timeout to prevent abort errors
     ...init,
   });
+
+  console.log(`API Response: ${res.status} ${res.statusText}`);
 
   if (!res.ok) {
     let message = `API error ${res.status}`;
     try {
       const body = await res.json();
       message = body?.detail ?? message;
+      console.error('API Error body:', body);
     } catch {
       // ignore parse error
     }
     throw new Error(message);
   }
 
-  return res.json() as Promise<T>;
+  const data = await res.json() as Promise<T>;
+  console.log('API Response data:', data);
+  return data;
 }
 
 // ─── Receipt ─────────────────────────────────────────────────────────────────

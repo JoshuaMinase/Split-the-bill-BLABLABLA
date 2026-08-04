@@ -223,11 +223,15 @@ export default function UploadPage() {
     setCreating(true);
     setParseError(null);
     try {
-      const { token } = await createSession(draft);
-      const link = `${window.location.origin}/session/${token}`;
+      console.log('Creating session with draft:', draft);
+      const response = await createSession(draft);
+      console.log('Session created successfully:', response);
+      const link = `${window.location.origin}/session/${response.token}`;
       setShareLink(link);
     } catch (err) {
-      setParseError(err instanceof Error ? err.message : 'Failed to create session');
+      console.error('Session creation failed:', err);
+      const errorMsg = err instanceof Error ? err.message : 'Failed to create session';
+      setParseError(`Failed to create group: ${errorMsg}`);
     } finally {
       setCreating(false);
     }
