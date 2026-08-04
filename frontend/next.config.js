@@ -24,11 +24,8 @@ const nextConfig = {
       },
     ],
   },
-  webpack: (config) => {
-    config.resolve.alias.canvas = false;
-    config.resolve.alias.encoding = false;
-    return config;
-  },
+  // Empty turbopack config to silence warning
+  turbopack: {},
 };
 
 module.exports = nextConfig;

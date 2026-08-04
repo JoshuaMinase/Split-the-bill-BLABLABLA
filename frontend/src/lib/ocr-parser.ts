@@ -9,6 +9,7 @@ import type { ReceiptDraft } from './types';
  * Extract text from an image using Tesseract.js OCR
  */
 async function extractTextFromImage(file: File): Promise<string> {
+  // Use CDN worker path for better compatibility
   const result = await Tesseract.recognize(file, 'eng', {
     logger: (m) => {
       if (m.status === 'recognizing text') {
