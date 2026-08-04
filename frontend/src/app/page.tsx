@@ -8,7 +8,6 @@ import { useState, useRef, ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Camera, Upload, Trash2, Plus, Loader2, Check, Copy, Share2, ChevronRight, PenLine } from 'lucide-react';
 import { parseReceipt, createSession } from '@/lib/api';
-import { parseReceiptWithOCR } from '@/lib/ocr-parser';
 import type { ReceiptDraft } from '@/lib/types';
 
 function fmt(n: number) {
@@ -148,21 +147,23 @@ export default function UploadPage() {
     if (preview) URL.revokeObjectURL(preview);
     setPreview(URL.createObjectURL(file));
     setParseError(null);
-    setDraft(null);          // clear previous draft so review panel hides
+    setDraft(null);
     setParsing(true);
     try {
-      // Use client-side OCR only (backend OCR won't work on Railway)
-      console.log('Attempting client-side OCR...');
-      const result = await parseReceiptWithOCR(file);
+      console.log('Sending image to backend AI (Gemini/OpenRouter/Groq)...');
+      const result = await parseReceipt(file);
       setDraft({ ...result, merchant_name: result.merchant_name ?? '' });
-      
-      // Show helpful message if no items were found
-      if (result.items.length === 0) {
-        setParseError('OCR could not detect items. Please enter them manually below.');
+
+      if (!result.items || result.items.length === 0) {
+        setParseError('AI could not detect items from this image. Please add them manually below.');
       }
     } catch (error) {
-      console.error('OCR failed:', error);
-      setParseError(error instanceof Error ? error.message : 'Failed to read receipt');
+      console.error('Backend parse failed:', error);
+      const msg = error instanceof Error ? error.message : 'Failed to read receipt';
+      // Surface a friendly error; user can enter manually via the buttons shown below
+      setParseError(msg);
+      // Show empty draft so user can type items in straight away
+      setDraft(emptyDraft());
     } finally {
       setParsing(false);
     }

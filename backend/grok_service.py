@@ -37,7 +37,7 @@ GEMINI_API_URL = (
 
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_MODEL   = "openrouter/free"   # auto-picks a free vision model
+OPENROUTER_MODEL   = "meta-llama/llama-3.2-11b-vision-instruct:free"
 
 # ─── Groq (3 keys, rotated on 429) ────────────────────────────────────────────
 
@@ -45,7 +45,9 @@ _raw_groq = os.environ.get("GROQ_API_KEY", "")
 # Support comma-separated list of keys OR a single key
 GROQ_API_KEYS: list[str] = [k.strip() for k in _raw_groq.split(",") if k.strip()]
 GROQ_API_URL  = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL    = "meta-llama/llama-4-scout-17b-16e-instruct"  # Groq's free vision model
+# Groq dropped vision support — llama-3.3-70b-versatile is text-only but will
+# gracefully return an error rather than hang. Real vision fallback = OpenRouter (tier 2).
+GROQ_MODEL    = "llama-3.3-70b-versatile"
 
 # ─── Shared prompt ─────────────────────────────────────────────────────────────
 
@@ -274,7 +276,12 @@ async def _call_openrouter(image_bytes: bytes, content_type: str) -> dict:
 # ─── Tier 3: Groq (rotates through multiple keys) ─────────────────────────────
 
 async def _call_groq_with_key(api_key: str, image_bytes: bytes, content_type: str) -> dict:
-    """Try one Groq key. Raises RuntimeError(_RATE_LIMITED) on 429."""
+    """
+    Try one Groq key.
+    NOTE: Groq removed vision support as of mid-2025. We still attempt the call
+    in case they re-add it, but any 4xx from Groq is treated as a soft failure
+    so the caller falls through to the next tier (or raises the final error).
+    """
     b64      = base64.b64encode(image_bytes).decode()
     data_url = f"data:{content_type};base64,{b64}"
     payload  = {
@@ -298,8 +305,10 @@ async def _call_groq_with_key(api_key: str, image_bytes: bytes, content_type: st
 
     if resp.status_code == 429:
         raise RuntimeError(_RATE_LIMITED)
-    if resp.status_code in (401, 403):
-        # Bad key — skip to next key rather than crashing
+    if resp.status_code in (400, 401, 403, 404, 422):
+        # 400/422 = model doesn't support vision; 401/403 = bad key; 404 = model gone
+        # All are treated as soft failures so the chain continues / ends gracefully.
+        print(f"Groq returned {resp.status_code}: {resp.text[:120]} — skipping tier.")
         raise RuntimeError(_RATE_LIMITED)
     resp.raise_for_status()
 
@@ -372,6 +381,10 @@ async def parse_receipt_image(image_bytes: bytes, content_type: str = "image/jpe
             # Treat unexpected ValueError (bad JSON, empty response) as a soft failure
             # and try the next provider rather than showing the user a cryptic error
             print(f"{name} parse error ({e}) — trying next tier.")
+            continue
+        except Exception as e:
+            # Catch any unexpected HTTP/network error and fall through to the next tier
+            print(f"{name} unexpected error ({type(e).__name__}: {e}) — trying next tier.")
             continue
 
     raise RuntimeError(
