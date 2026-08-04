@@ -1,21 +1,25 @@
 """
-Sends a receipt photo to the Grok API (x.ai) and returns structured JSON:
+Sends a receipt photo to the Google Gemini API and returns structured JSON:
   {"merchant_name": ..., "items": [...], "subtotal": ..., "tax": ..., "tip": ..., "total": ...}
 
-Grok's API is OpenAI-compatible, so we use the standard chat completions
-endpoint with an image_url content block containing a base64 data URL.
+Uses the Gemini 2.0 Flash model which supports image input and is free
+(15 req/min, 1,500 req/day on the free tier).
 """
 import base64
 import json
 import os
+import re
 import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
 
-GROK_API_KEY = os.environ.get("GROK_API_KEY", "")
-GROK_API_URL = "https://api.x.ai/v1/chat/completions"
-GROK_MODEL = "grok-4.5"  # current flagship model with vision support (grok-2-vision-1212 retired)
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_API_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/"
+    f"{GEMINI_MODEL}:generateContent"
+)
 
 SYSTEM_PROMPT = """You are a receipt-parsing engine. You will be shown a photo of a restaurant \
 receipt. Extract the data and return ONLY valid JSON, no markdown fences, no commentary, \
@@ -41,70 +45,85 @@ Rules:
 """
 
 
-def _to_data_url(image_bytes: bytes, content_type: str) -> str:
-    b64 = base64.b64encode(image_bytes).decode("utf-8")
-    return f"data:{content_type};base64,{b64}"
-
-
 async def parse_receipt_image(image_bytes: bytes, content_type: str = "image/jpeg") -> dict:
-    if not GROK_API_KEY:
+    if not GEMINI_API_KEY:
         raise RuntimeError(
-            "GROK_API_KEY is not set. Add it to backend/.env before calling this endpoint."
+            "GEMINI_API_KEY is not set. Add it to backend/.env before calling this endpoint."
         )
 
-    data_url = _to_data_url(image_bytes, content_type)
+    b64_image = base64.b64encode(image_bytes).decode("utf-8")
 
     payload = {
-        "model": GROK_MODEL,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+        "system_instruction": {
+            "parts": [{"text": SYSTEM_PROMPT}]
+        },
+        "contents": [
             {
-                "role": "user",
-                "content": [
-                    {"type": "image_url", "image_url": {"url": data_url}},
-                    {"type": "text", "text": "Parse this receipt into the JSON shape described."},
-                ],
-            },
+                "parts": [
+                    {
+                        "inline_data": {
+                            "mime_type": content_type,
+                            "data": b64_image,
+                        }
+                    },
+                    {"text": "Parse this receipt into the JSON shape described."},
+                ]
+            }
         ],
-        "temperature": 0,
+        "generationConfig": {
+            "temperature": 0,
+            "responseMimeType": "application/json",
+        },
     }
 
-    headers = {
-        "Authorization": f"Bearer {GROK_API_KEY}",
-        "Content-Type": "application/json",
-    }
+    url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}"
 
     async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(GROK_API_URL, json=payload, headers=headers)
-        if resp.status_code == 401:
-            raise RuntimeError("Invalid Grok API key. Please check your GROK_API_KEY.")
-        if resp.status_code == 403:
+        resp = await client.post(url, json=payload)
+        if resp.status_code == 400:
             raise RuntimeError(
-                "Grok API access denied (403). Your API key may have run out of credits "
-                "or lacks permission for this model. Visit console.x.ai to check your balance."
+                "Gemini API bad request (400). The image may be too large or in an unsupported format."
+            )
+        if resp.status_code == 401 or resp.status_code == 403:
+            raise RuntimeError(
+                "Invalid or unauthorized Gemini API key. Check your GEMINI_API_KEY at "
+                "https://aistudio.google.com/app/apikey"
             )
         if resp.status_code == 429:
-            raise RuntimeError("Grok API rate limit reached. Please wait a moment and try again.")
+            raise RuntimeError(
+                "Gemini API rate limit reached (free tier: 15 req/min). "
+                "Please wait a moment and try again."
+            )
         resp.raise_for_status()
         data = resp.json()
 
-    # Validate response structure before accessing
-    if "choices" not in data or not data["choices"]:
-        raise ValueError(f"Invalid Grok API response: missing 'choices'. Got: {str(data)[:200]}")
-    message = data["choices"][0].get("message", {})
-    raw_text = message.get("content", "").strip()
-    if not raw_text:
-        raise ValueError("Grok API returned an empty response")
+    # Validate response structure
+    candidates = data.get("candidates", [])
+    if not candidates:
+        # Check for prompt feedback / blocking
+        feedback = data.get("promptFeedback", {})
+        block_reason = feedback.get("blockReason", "")
+        if block_reason:
+            raise ValueError(f"Gemini blocked the request: {block_reason}")
+        raise ValueError(f"Gemini API returned no candidates. Response: {str(data)[:200]}")
 
-    # Strip markdown code fences robustly (```json ... ``` or ``` ... ```)
-    import re as _re
-    raw_text = _re.sub(r"^```(?:json)?\s*\n?", "", raw_text, flags=_re.IGNORECASE)
-    raw_text = _re.sub(r"\n?```\s*$", "", raw_text).strip()
+    content = candidates[0].get("content", {})
+    parts = content.get("parts", [])
+    if not parts:
+        raise ValueError("Gemini API returned an empty response")
+
+    raw_text = parts[0].get("text", "").strip()
+    if not raw_text:
+        raise ValueError("Gemini API returned an empty response")
+
+    # Strip markdown code fences just in case (```json ... ``` or ``` ... ```)
+    raw_text = re.sub(r"^```(?:json)?\s*\n?", "", raw_text, flags=re.IGNORECASE)
+    raw_text = re.sub(r"\n?```\s*$", "", raw_text).strip()
 
     try:
         parsed = json.loads(raw_text)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Grok returned non-JSON output: {raw_text[:300]}") from e
+        raise ValueError(f"Gemini returned non-JSON output: {raw_text[:300]}") from e
 
     if "error" in parsed:
         raise ValueError(parsed["error"])

@@ -131,49 +131,34 @@ class TestConnectionManager:
 
 # ─── grok_service parsing tests ───────────────────────────────────────────────
 
-class TestDataUrl:
-
-    def test_jpeg_data_url(self):
-        result = grok_service._to_data_url(b"\xff\xd8\xff", "image/jpeg")
-        assert result.startswith("data:image/jpeg;base64,")
-
-    def test_png_data_url(self):
-        result = grok_service._to_data_url(b"\x89PNG", "image/png")
-        assert result.startswith("data:image/png;base64,")
-
-    def test_data_url_is_valid_base64(self):
-        import base64
-        data = b"hello world"
-        result = grok_service._to_data_url(data, "image/jpeg")
-        b64_part = result.split(",", 1)[1]
-        assert base64.b64decode(b64_part) == data
-
-
 class TestMarkdownStripping:
     """Test the JSON extraction from grok_service responses via the full parse path."""
 
-    def _mock_grok_response(self, content: str) -> dict:
-        """Build a fake Grok API response dict."""
+    def _mock_gemini_response(self, content: str) -> dict:
+        """Build a fake Gemini API response dict."""
         return {
-            "choices": [{"message": {"content": content}}]
+            "candidates": [
+                {"content": {"parts": [{"text": content}]}}
+            ]
         }
 
     def _call_parse_with_mock_response(self, content: str) -> dict:
         """
         Call parse_receipt_image with a mocked httpx client that returns
-        a fake Grok response.
+        a fake Gemini response.
         """
-        fake_response = self._mock_grok_response(content)
+        fake_response = self._mock_gemini_response(content)
         mock_resp = MagicMock()
         mock_resp.json.return_value = fake_response
         mock_resp.raise_for_status = MagicMock()
+        mock_resp.status_code = 200
 
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.post = AsyncMock(return_value=mock_resp)
 
-        with patch("grok_service.GROK_API_KEY", "fake-key"), \
+        with patch("grok_service.GEMINI_API_KEY", "fake-key"), \
              patch("httpx.AsyncClient", return_value=mock_client):
             return run(grok_service.parse_receipt_image(b"fake", "image/jpeg"))
 
@@ -201,24 +186,25 @@ class TestMarkdownStripping:
         with pytest.raises(ValueError, match="blurry"):
             self._call_parse_with_mock_response(payload)
 
-    def test_missing_choices_raises_value_error(self):
-        """If API returns a response without 'choices', raise ValueError."""
+    def test_missing_candidates_raises_value_error(self):
+        """If API returns a response without 'candidates', raise ValueError."""
         fake_response = {"error": {"code": 500, "message": "internal error"}}
         mock_resp = MagicMock()
         mock_resp.json.return_value = fake_response
         mock_resp.raise_for_status = MagicMock()
+        mock_resp.status_code = 200
 
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.post = AsyncMock(return_value=mock_resp)
 
-        with patch("grok_service.GROK_API_KEY", "fake-key"), \
+        with patch("grok_service.GEMINI_API_KEY", "fake-key"), \
              patch("httpx.AsyncClient", return_value=mock_client):
-            with pytest.raises(ValueError, match="choices"):
+            with pytest.raises(ValueError, match="candidates"):
                 run(grok_service.parse_receipt_image(b"fake", "image/jpeg"))
 
     def test_no_api_key_raises_runtime_error(self):
-        with patch("grok_service.GROK_API_KEY", ""):
-            with pytest.raises(RuntimeError, match="GROK_API_KEY"):
+        with patch("grok_service.GEMINI_API_KEY", ""):
+            with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
                 run(grok_service.parse_receipt_image(b"fake", "image/jpeg"))
