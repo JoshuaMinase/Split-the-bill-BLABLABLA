@@ -1,0 +1,22 @@
+// Prisma schema for initial migration: store session state as a single JSON document for simplicity.
+// Postgres connection: set DATABASE_URL in Railway / .env
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  data      Json     // full session payload (participants, receipt, claims, payer, results)
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sessions")
+}
