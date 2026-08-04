@@ -2,13 +2,20 @@
 Receipt parsing with 3-tier automatic fallback:
 
   1. Google Gemini 2.0 Flash       (primary  — free, 1,500 req/day)
-  2. OpenRouter free vision router  (fallback — activates on Gemini 429)
+  2. OpenRouter free vision router  (fallback — activates on Gemini 429/400)
   3. Groq vision  ×3 keys           (last resort — rotates through 3 keys on 429)
 
-Each tier is tried in order. A 429 rate-limit moves to the next tier.
-Any other error (bad key, bad image, bad JSON) is raised immediately.
+Images are pre-processed before sending:
+  - HEIC/HEIF converted to JPEG
+  - Resized to max 1600px on the long edge
+  - Compressed to JPEG quality 85
+  - Hard cap at 4 MB after compression
+
+Each tier is tried in order. A 429 or 400 moves to the next tier.
+Any other error (bad key, bad JSON) is raised immediately.
 """
 import base64
+import io
 import json
 import os
 import re
@@ -67,8 +74,64 @@ Rules:
 
 USER_TEXT = "Parse this receipt into the JSON shape described."
 
-# sentinel raised internally to signal 429 to the caller
+# sentinel raised internally to signal 429/400 to the caller
 _RATE_LIMITED = "RATE_LIMITED"
+
+# ─── Image preprocessing ───────────────────────────────────────────────────────
+
+def _preprocess_image(image_bytes: bytes, content_type: str) -> tuple[bytes, str]:
+    """
+    Normalise the image before sending to any AI API:
+      - Convert HEIC/HEIF/PNG/WebP → JPEG
+      - Resize to max 1600px on the long edge (keeps aspect ratio)
+      - Compress at JPEG quality 85
+      - If still > 4 MB, compress harder (quality 60 → 40)
+    Returns (processed_bytes, "image/jpeg").
+    """
+    try:
+        from PIL import Image, ExifTags  # type: ignore
+
+        img = Image.open(io.BytesIO(image_bytes))
+
+        # Auto-rotate based on EXIF orientation
+        try:
+            for tag, val in (img.getexif() or {}).items():
+                if ExifTags.TAGS.get(tag) == "Orientation":
+                    rotations = {3: 180, 6: 270, 8: 90}
+                    if val in rotations:
+                        img = img.rotate(rotations[val], expand=True)
+                    break
+        except Exception:
+            pass
+
+        # Convert to RGB (handles RGBA, P, CMYK, HEIC etc.)
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+
+        # Resize: cap long edge at 1600px
+        MAX_PX = 1600
+        w, h = img.size
+        if max(w, h) > MAX_PX:
+            if w >= h:
+                img = img.resize((MAX_PX, int(h * MAX_PX / w)), Image.LANCZOS)
+            else:
+                img = img.resize((int(w * MAX_PX / h), MAX_PX), Image.LANCZOS)
+
+        # Encode to JPEG
+        for quality in (85, 60, 40):
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=quality, optimize=True)
+            data = buf.getvalue()
+            if len(data) <= 4 * 1024 * 1024:
+                return data, "image/jpeg"
+
+        # Fallback: return whatever we got at quality 40
+        return data, "image/jpeg"
+
+    except Exception as e:
+        # If Pillow fails for any reason, send the original and let the AI handle it
+        print(f"Image preprocessing failed ({e}), sending original.")
+        return image_bytes, content_type
 
 
 # ─── JSON helpers ──────────────────────────────────────────────────────────────
@@ -116,7 +179,9 @@ async def _call_gemini(image_bytes: bytes, content_type: str) -> dict:
             "Gemini API key is invalid. Check GEMINI_API_KEY at https://aistudio.google.com/app/apikey"
         )
     if resp.status_code == 400:
-        raise RuntimeError("Gemini rejected the image (400). Try a clearer photo.")
+        # Bad request from Gemini — image format/size issue. Fall through to next provider.
+        print(f"Gemini 400 on image ({content_type}, {len(image_bytes)//1024}KB) — trying next tier.")
+        raise RuntimeError(_RATE_LIMITED)
     resp.raise_for_status()
 
     data = resp.json()
@@ -245,13 +310,17 @@ async def parse_receipt_image(image_bytes: bytes, content_type: str = "image/jpe
     """
     Parse a receipt image using a 3-tier fallback chain:
       Gemini → OpenRouter → Groq (×3 keys)
-    Each tier is attempted only if the previous one is rate-limited.
+    Each tier is attempted only if the previous one is rate-limited or rejects the image.
+    The image is preprocessed (resized + JPEG-normalised) before any API call.
     """
     if not GEMINI_API_KEY and not OPENROUTER_API_KEY and not GROQ_API_KEYS:
         raise RuntimeError(
             "No AI API keys configured. Set GEMINI_API_KEY, OPENROUTER_API_KEY, "
             "and/or GROQ_API_KEY in backend/.env"
         )
+
+    # Preprocess once — all tiers receive the same normalised image
+    image_bytes, content_type = _preprocess_image(image_bytes, content_type)
 
     tiers = [
         ("Gemini",      _call_gemini      if GEMINI_API_KEY      else None),
