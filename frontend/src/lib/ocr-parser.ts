@@ -196,15 +196,18 @@ export async function parseReceiptWithOCR(file: File): Promise<ReceiptDraft> {
     const parsed = parseReceiptText(text);
     console.log('Parsed receipt:', parsed);
     
-    // If OCR didn't find any items, throw an error to trigger manual entry
-    if (parsed.items.length === 0) {
-      console.log('No items found, throwing error for manual entry');
-      throw new Error('OCR could not detect any items. Please enter items manually.');
-    }
-    
+    // Return the result even if no items found - user can manually enter
     return parsed;
   } catch (error) {
     console.error('OCR parsing failed:', error);
-    throw new Error(`Failed to read receipt: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    // Return empty draft on error so user can manually enter
+    return {
+      merchant_name: null,
+      items: [],
+      subtotal: 0,
+      tax: 0,
+      tip: 0,
+      total: 0,
+    };
   }
 }

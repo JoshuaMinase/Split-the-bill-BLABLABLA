@@ -151,21 +151,18 @@ export default function UploadPage() {
     setDraft(null);          // clear previous draft so review panel hides
     setParsing(true);
     try {
-      // Try client-side OCR first
+      // Use client-side OCR only (backend OCR won't work on Railway)
       console.log('Attempting client-side OCR...');
       const result = await parseReceiptWithOCR(file);
       setDraft({ ...result, merchant_name: result.merchant_name ?? '' });
-    } catch (ocrError) {
-      console.log('Client-side OCR failed, trying backend:', ocrError);
-      try {
-        // Fallback to backend OCR
-        console.log('Attempting backend OCR...');
-        const result = await parseReceipt(file);
-        setDraft({ ...result, merchant_name: result.merchant_name ?? '' });
-      } catch (backendError) {
-        const msg = `OCR failed: ${ocrError instanceof Error ? ocrError.message : 'Unknown error'}. Backend also failed: ${backendError instanceof Error ? backendError.message : 'Unknown error'}`;
-        setParseError(msg);
+      
+      // Show helpful message if no items were found
+      if (result.items.length === 0) {
+        setParseError('OCR could not detect items. Please enter them manually below.');
       }
+    } catch (error) {
+      console.error('OCR failed:', error);
+      setParseError(error instanceof Error ? error.message : 'Failed to read receipt');
     } finally {
       setParsing(false);
     }
