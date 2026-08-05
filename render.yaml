@@ -1,15 +1,22 @@
 services:
   - type: web
+    runtime: node
     name: splitreceipt-frontend
-    env: node
     plan: free
     region: oregon
     branch: main
-    buildCommand: cd frontend && npm install && npx prisma generate && npm run build
-    startCommand: cd frontend && npx prisma migrate deploy && npx prisma generate && npx next start -p $PORT
+    buildCommand: cd frontend && npm install && npm run build
+    startCommand: cd frontend && npx prisma db push --accept-data-loss && npx next start -p $PORT
     autoDeploy: true
     healthCheckPath: /api/health-db
     envVars:
       - key: NODE_ENV
         value: production
-    disk: 1024
+      - key: DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
