@@ -1,6 +1,6 @@
 [phases.setup]
 # Use Node.js runtime for building the frontend app
-nixPkgs = ["nodejs-24_x", "nodejs-24_x.nodePackages.npm"]
+nixPkgs = ["nodejs-18_x", "nodejs-18_x.nodePackages.npm"]
 
 [phases.install]
 cmds = [
