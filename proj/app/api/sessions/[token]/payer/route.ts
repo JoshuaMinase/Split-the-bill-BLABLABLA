@@ -1,0 +1,22 @@
+import { NextResponse } from 'next/server';
+export const runtime = 'nodejs';
+import { prisma } from '../../../../../lib/prisma';
+
+export async function POST(request: any, context: any) {
+  const params = context?.params || {};
+  const token = params.token;
+  const body = await request.json().catch(() => ({}));
+  const { participant_id, account_type, account_details } = body;
+  if (!participant_id || !account_type || !account_details) return NextResponse.json({ error: 'invalid body' }, { status: 400 });
+
+  const sess = await prisma.session.findUnique({ where: { token } });
+  if (!sess) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+  const sdata: any = sess.data || {};
+
+  const participantIds = (sdata.participants || []).map((p: any) => p.id);
+  if (!participantIds.includes(participant_id)) return NextResponse.json({ error: 'participant not in session' }, { status: 400 });
+
+  const payer = { participant_id, account_type, account_details };
+  await prisma.session.update({ where: { token }, data: { data: { ...sdata, payer } } });
+  return NextResponse.json({ ok: true });
+}
