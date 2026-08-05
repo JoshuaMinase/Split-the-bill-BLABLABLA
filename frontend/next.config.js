@@ -24,8 +24,10 @@ const nextConfig = {
       },
     ],
   },
-  // Empty turbopack config to silence warning
-  turbopack: {},
+  // Turbopack config — set root to workspace so Next infers correct root during builds
+  turbopack: {
+    root: '.'
+  },
 };
 
 module.exports = nextConfig;
