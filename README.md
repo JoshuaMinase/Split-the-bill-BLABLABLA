@@ -23,6 +23,8 @@ Tech stack
 - Realtime: polling fallback (short-term); can be swapped to Supabase/WS
 - Deploy: Railway (Postgres) — see DEPLOY_RAILWAY.md
 
+ci: redeploy trigger - rebuild on Railway
+
 ---
 
 API endpoints (summary)
