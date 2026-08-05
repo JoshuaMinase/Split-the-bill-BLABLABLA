@@ -1,7 +1,7 @@
 [build]
 builder = "nixpacks"
 watchPatterns = ["frontend/**"]
-command = "cd frontend && npm ci && npm run build"
+command = "cd frontend && npm install && npm run build"
 
 [deploy]
 startCommand = "cd frontend && npx next start -p $PORT"
