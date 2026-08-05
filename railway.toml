@@ -1,7 +1,7 @@
 [build]
-builder = "NIXPACKS"
-watchPatterns = ["frontend/**"]
-buildCommand = "npm install && npm run build"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+watchPatterns = ["frontend/**", "Dockerfile"]
 
 [deploy]
 startCommand = "npx next start -p $PORT"
