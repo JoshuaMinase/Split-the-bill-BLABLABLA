@@ -1,0 +1,14 @@
+{
+  "/_global-error/page": "app/_global-error/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/food-image/route": "app/api/food-image/route.js",
+  "/api/health-db/route": "app/api/health-db/route.js",
+  "/api/receipts/parse/route": "app/api/receipts/parse/route.js",
+  "/api/receipts/parse/upload/route": "app/api/receipts/parse/upload/route.js",
+  "/api/sessions/[token]/claim/route": "app/api/sessions/[token]/claim/route.js",
+  "/api/sessions/[token]/join/route": "app/api/sessions/[token]/join/route.js",
+  "/api/sessions/[token]/lock/route": "app/api/sessions/[token]/lock/route.js",
+  "/api/sessions/[token]/payer/route": "app/api/sessions/[token]/payer/route.js",
+  "/api/sessions/[token]/route": "app/api/sessions/[token]/route.js",
+  "/api/sessions/route": "app/api/sessions/route.js"
+}
