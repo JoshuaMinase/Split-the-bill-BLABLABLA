@@ -250,10 +250,10 @@ export default function SessionPage() {
 
   async function handleJoin(name: string) {
     const deviceToken = getDeviceToken();
-    const { participant_id } = await joinSession(token, name, deviceToken);
+    const { participant_id } = await joinSession(token!, name, deviceToken);
     setParticipantId(participant_id);
     try {
-      localStorage.setItem(`splitreceipt_pid_${token}`, participant_id);
+      localStorage.setItem(`splitreceipt_pid_${token!}`, participant_id);
     } catch { /* ignore */ }
   }
 
@@ -266,7 +266,7 @@ export default function SessionPage() {
     );
     setPendingItemId(item.id);
     try {
-      await toggleClaim(token, item.id, participantId, !alreadyClaimed);
+      await toggleClaim(token!, item.id, participantId, !alreadyClaimed);
     } finally {
       setPendingItemId(null);
     }
