@@ -20,7 +20,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(500).json({ error: 'Failed to parse upload' });
     }
 
-    const file = files?.file as formidable.File | undefined;
+    const file = files?.file as any | undefined;
     if (!file) return res.status(400).json({ error: 'No file uploaded (name: file)' });
 
     try {
