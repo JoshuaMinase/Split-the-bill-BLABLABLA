@@ -1,5 +1,3 @@
-import fetch from 'node-fetch';
-
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
@@ -36,7 +34,7 @@ async function callGemini(imageB64: string, contentType: string) {
     generationConfig: { temperature: 0, responseMimeType: 'application/json' }
   };
   const url = `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`;
-  const res = await fetch(url, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'application/json' }, timeout: 60000 });
+  const res = await fetch(url, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'application/json' } });
   if (res.status === 429) throw new Error('RATE_LIMITED');
   if (!res.ok) throw new Error(`Gemini error ${res.status}`);
   const data = await res.json();
