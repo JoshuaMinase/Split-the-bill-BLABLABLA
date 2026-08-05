@@ -225,7 +225,8 @@ function JoinScreen({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function SessionPage() {
-  const { token } = useParams<{ token: string }>();
+  const params = useParams() as { token?: string } | null;
+  const token = params?.token as string | undefined;
   const router = useRouter();
   const { session, loading, error } = useSession(token);
 
