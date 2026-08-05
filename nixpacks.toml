@@ -1,17 +1,2 @@
-[phases.setup]
-# Use Node.js runtime for building the frontend app
-nixPkgs = ["nodejs-18_x", "nodejs-18_x.nodePackages.npm"]
-
-[phases.install]
-cmds = [
-  "cd frontend && npm install",
-  "cd frontend && npx prisma generate"
-]
-
-[phases.build]
-cmds = [
-  "cd frontend && npm run build"
-]
-
-[start]
-cmd = "cd frontend && npx prisma migrate deploy && npx prisma generate && npx next start -p $PORT"
+# nixpacks configuration disabled — using pack builder in railway.toml
+# Renamed to keep for reference. Railway pack builder will use the frontend package.json build scripts.
