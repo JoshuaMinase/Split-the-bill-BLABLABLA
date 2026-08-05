@@ -259,15 +259,16 @@ function PayerForm({
   const [submitting,     setSubmitting]     = useState(false);
   const [submitError,    setSubmitError]    = useState<string | null>(null);
 
-  const { token } = useParams<{ token: string }>();
+  const params = useParams() as { token?: string } | null;
+  const token = params?.token as string | undefined;
 
   async function handleSubmit() {
     if (!selectedPayerId || !accountType.trim() || !accountDetails.trim()) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await setPayer(token, selectedPayerId, accountType.trim(), accountDetails.trim());
-      await lockSession(token);
+      await setPayer(token!, selectedPayerId, accountType.trim(), accountDetails.trim());
+      await lockSession(token!);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
@@ -393,8 +394,9 @@ function PayerForm({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ResultsPage() {
-  const { token }                         = useParams<{ token: string }>();
-  const { session, loading, error }        = useSession(token);
+  const params = useParams() as { token?: string } | null;
+  const token = params?.token as string | undefined;
+  const { session, loading, error } = useSession(token ?? null);
   const [participantId, setParticipantId] = useState<string | null>(null);
 
   useEffect(() => {
