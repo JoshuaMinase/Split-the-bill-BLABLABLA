@@ -28,7 +28,6 @@ export async function POST(request: any, context: any) {
     claims = claims.filter((c: any) => !(c.item_id === item_id && c.participant_id === participant_id));
   }
 
-  const sdata: any = sess.data || {};
   await prisma.session.update({ where: { token }, data: { data: { ...sdata, claims } } });
   return NextResponse.json({ ok: true });
 }
