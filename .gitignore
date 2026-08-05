@@ -59,3 +59,9 @@ run_orchestrator.bat
 # ── MongoDB local data ────────────────────────────────────────
 data/db/
 mongod.lock
+
+# Ignore accidental build artifacts from local Next.js builds
+proj/
+proj/.next/
+proj/.env.local
+proj/.env*
