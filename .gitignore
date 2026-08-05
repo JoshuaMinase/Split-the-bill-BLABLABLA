@@ -61,7 +61,7 @@ data/db/
 mongod.lock
 
 # Ignore accidental build artifacts from local Next.js builds
-proj/
+# (proj is the actual frontend root and should NOT be ignored)
 proj/.next/
 proj/.env.local
 proj/.env*
