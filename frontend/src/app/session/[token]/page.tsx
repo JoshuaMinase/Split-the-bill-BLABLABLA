@@ -228,7 +228,7 @@ export default function SessionPage() {
   const params = useParams() as { token?: string } | null;
   const token = params?.token as string | undefined;
   const router = useRouter();
-  const { session, loading, error } = useSession(token);
+  const { session, loading, error } = useSession(token ?? null);
 
   const [participantId, setParticipantId] = useState<string | null>(null);
   const [pendingItemId, setPendingItemId] = useState<string | null>(null);
